@@ -1,0 +1,3265 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ChunkLab 3D — Procedural Voxel & Chunk Studio</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- Inter & JetBrains Mono Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #090d16;
+      color: #e2e8f0;
+      font-family: 'Inter', system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    #viewport-container {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    canvas.webgl-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      outline: none;
+    }
+
+    /* Glassmorphism surface tokens */
+    .glass {
+      background: rgba(15, 21, 35, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.48);
+    }
+
+    .glass-solid {
+      background: rgba(13, 19, 32, 0.96);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Minimal precision sliders */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 5px;
+      background: rgba(51, 65, 85, 0.85);
+      border-radius: 999px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #090d16;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+      transition: transform 0.12s ease, background-color 0.12s ease;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.16);
+      background: #7dd3fc;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #090d16;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+      cursor: pointer;
+    }
+
+    input[type="range"].accent-emerald::-webkit-slider-thumb {
+      background: #34d399;
+      box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.25);
+    }
+
+    input[type="range"].accent-amber::-webkit-slider-thumb {
+      background: #fbbf24;
+      box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.25);
+    }
+
+    /* Toggle switches */
+    .toggle-checkbox:checked + .toggle-track {
+      background-color: #0284c7;
+    }
+    .toggle-checkbox:checked + .toggle-track .toggle-dot {
+      transform: translateX(16px);
+    }
+    .toggle-checkbox.emerald:checked + .toggle-track {
+      background-color: #059669;
+    }
+    .toggle-checkbox.violet:checked + .toggle-track {
+      background-color: #7c3aed;
+    }
+
+    /* Slim scrollbars */
+    .slim-scroll::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    .slim-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .slim-scroll::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.45);
+      border-radius: 999px;
+    }
+
+    /* Collapsible drawer transitions */
+    #formula-drawer {
+      transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+    }
+    #formula-drawer.collapsed {
+      transform: translateX(calc(-100% - 20px));
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    @keyframes toastPop {
+      from { opacity: 0; transform: translate(-50%, 10px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+    .toast-pop {
+      animation: toastPop 0.2s ease forwards;
+    }
+
+    /* Allow text selection inside inputs and selectable code tags */
+    input, textarea, .selectable {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Fullscreen Interactive 3D WebGL Viewport -->
+  <div id="viewport-container"></div>
+
+  <!-- Offline / WebGL Fallback Banner (hidden unless needed) -->
+  <div id="engine-error-banner" class="hidden fixed inset-0 z-50 bg-slate-950/95 flex items-center justify-center p-6">
+    <div class="glass-solid max-w-md w-full rounded-2xl p-6 text-center space-y-3">
+      <div class="w-12 h-12 mx-auto rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+        </svg>
+      </div>
+      <h2 class="text-base font-semibold text-white">3D Engine Unavailable</h2>
+      <p id="engine-error-text" class="text-xs text-slate-400 leading-relaxed">
+        Unable to load the Three.js WebGL renderer. Please check your internet connection and reload.
+      </p>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- TOP QUICK-ACTION BAR                                                   -->
+  <!-- ====================================================================== -->
+  <header class="fixed top-3 left-3 right-3 z-30 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+
+    <!-- Left: Drawer Toggle & Brand -->
+    <div class="flex items-center gap-2 pointer-events-auto">
+      <button id="btn-toggle-drawer" title="Toggle Formula Controls"
+        class="glass hover:bg-slate-800/90 px-3 py-2 rounded-xl flex items-center gap-2 text-xs font-semibold text-slate-100 transition active:scale-95">
+        <svg class="w-4 h-4 text-sky-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h10M4 18h16" />
+        </svg>
+        <span class="flex items-center gap-1.5 tracking-tight">
+          <svg class="w-4 h-4 text-emerald-400 hidden sm:inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
+          </svg>
+          <span>ChunkLab <span class="text-sky-400">3D</span></span>
+        </span>
+      </button>
+    </div>
+
+    <!-- Center: Seed Box, Randomize, Share URL, Publish -->
+    <div class="glass rounded-xl p-1 flex items-center gap-1 pointer-events-auto max-w-full overflow-x-auto slim-scroll">
+      <!-- Seed Input -->
+      <div class="flex items-center bg-slate-950/75 border border-slate-700/70 focus-within:border-sky-500 rounded-lg px-2 py-1 transition">
+        <span class="text-[10px] font-mono uppercase text-slate-500 mr-1.5 hidden sm:inline">Seed</span>
+        <input id="top-seed-input" type="text" value="prism-704" spellcheck="false" aria-label="World Seed"
+          class="bg-transparent text-xs font-mono text-slate-100 w-24 sm:w-32 outline-none" />
+      </div>
+
+      <!-- Random Seed -->
+      <button id="btn-random-seed" title="Random Seed"
+        class="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/90 text-slate-200 text-xs font-medium flex items-center gap-1 transition active:scale-95 shrink-0">
+        <svg class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span class="hidden md:inline">Seed</span>
+      </button>
+
+      <!-- Randomize All Values (Chaos Generator) -->
+      <button id="btn-randomize-all" title="Randomize All Math Values"
+        class="px-2.5 py-1.5 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/35 text-violet-200 text-xs font-medium flex items-center gap-1 transition active:scale-95 shrink-0">
+        <svg class="w-3.5 h-3.5 text-violet-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+        </svg>
+        <span class="hidden lg:inline">Randomize All</span>
+      </button>
+
+      <!-- Copy Share URL -->
+      <button id="btn-copy-url" title="Copy Shareable World URL"
+        class="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700/90 text-slate-200 text-xs font-medium flex items-center gap-1 transition active:scale-95 shrink-0">
+        <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+        </svg>
+        <span class="hidden lg:inline">Share URL</span>
+      </button>
+
+      <!-- Publish to Community Hub -->
+      <button id="btn-open-publish" title="Publish Creation to Community Hub"
+        class="px-2.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold flex items-center gap-1 transition active:scale-95 shrink-0">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+        <span class="hidden sm:inline">Publish</span>
+      </button>
+    </div>
+
+    <!-- Right: Community Hub, Shared Room, Identity -->
+    <div class="flex items-center gap-1.5 pointer-events-auto">
+      <!-- Community Hub -->
+      <button id="btn-open-hub"
+        class="glass hover:bg-slate-800/90 px-2.5 py-2 rounded-xl text-xs font-medium text-slate-200 flex items-center gap-1.5 transition active:scale-95">
+        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+        <span class="hidden sm:inline">Hub</span>
+        <span id="hub-count-badge" class="px-1.5 py-0.2 rounded-md bg-amber-500/20 text-amber-300 font-mono text-[10px]">4</span>
+      </button>
+
+      <!-- Collaborative Shared Room -->
+      <button id="btn-open-room"
+        class="glass hover:bg-slate-800/90 px-2.5 py-2 rounded-xl text-xs font-medium text-slate-200 flex items-center gap-1.5 transition active:scale-95">
+        <span id="room-status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+        <span id="room-btn-label" class="hidden sm:inline">Rooms</span>
+      </button>
+
+      <!-- User Nickname / Cloud Status -->
+      <button id="btn-open-profile" title="Profile & Sync Status"
+        class="glass hover:bg-slate-800/90 px-2.5 py-2 rounded-xl text-xs font-medium text-slate-200 flex items-center gap-1.5 transition active:scale-95">
+        <span id="cloud-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+        <span id="top-nickname" class="max-w-[84px] truncate font-mono text-[11px] text-slate-200">Builder</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ====================================================================== -->
+  <!-- LEFT COLLAPSIBLE FORMULA CONTROL DRAWER                                -->
+  <!-- ====================================================================== -->
+  <aside id="formula-drawer" class="fixed top-16 bottom-3 left-3 z-20 w-[336px] max-w-[calc(100vw-24px)] glass rounded-2xl flex flex-col overflow-hidden">
+
+    <!-- 4 Formula & Tool Tabs -->
+    <nav class="grid grid-cols-4 gap-1 p-2 border-b border-slate-700/50 bg-slate-950/40 text-[11px] font-medium">
+      <button data-tab="panel-perlin" class="tab-btn py-1.5 px-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 transition text-center">
+        Perlin
+      </button>
+      <button data-tab="panel-multi" class="tab-btn py-1.5 px-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent transition text-center">
+        Biomes
+      </button>
+      <button data-tab="panel-density" class="tab-btn py-1.5 px-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent transition text-center">
+        3D Caves
+      </button>
+      <button data-tab="panel-chunks" class="tab-btn py-1.5 px-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent transition text-center relative">
+        Chunks
+        <span id="tab-edit-dot" class="hidden absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+      </button>
+    </nav>
+
+    <!-- Scrollable Tab Body -->
+    <div class="flex-1 overflow-y-auto slim-scroll p-3.5 space-y-4">
+
+      <!-- ==================== TAB A: PERLIN & OCTAVES ==================== -->
+      <section id="panel-perlin" class="tab-panel space-y-3.5">
+        <div class="bg-slate-950/75 border border-slate-800 rounded-xl p-2.5">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] uppercase tracking-wider text-sky-400 font-semibold">Live Height Formula</span>
+            <span id="seed-hash-readout" class="font-mono text-[10px] text-slate-500">#00000000</span>
+          </div>
+          <div class="font-mono text-[11px] text-slate-200 leading-relaxed overflow-x-auto">
+            H(x,z) = <span class="text-sky-400">&Sigma;</span><sub class="text-slate-400">i=0..<span id="read-oct-max">3</span></sub>
+            <span class="text-emerald-300" id="read-amp">12.0</span>·<span class="text-emerald-400" id="read-pers">0.50</span><sup>i</sup>
+            · N(<span class="text-amber-300" id="read-freq">0.025</span>·<span class="text-amber-400" id="read-lac">2.00</span><sup>i</sup>·x, z)
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Octaves</span>
+              <span id="val-octaves" class="font-mono text-sky-300">4</span>
+            </div>
+            <input id="sl-octaves" type="range" min="1" max="6" step="1" value="4" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Frequency (f₀)</span>
+              <span id="val-frequency" class="font-mono text-sky-300">0.025</span>
+            </div>
+            <input id="sl-frequency" type="range" min="0.006" max="0.095" step="0.001" value="0.025" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Lacunarity</span>
+              <span id="val-lacunarity" class="font-mono text-sky-300">2.00</span>
+            </div>
+            <input id="sl-lacunarity" type="range" min="1.10" max="3.40" step="0.05" value="2.00" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Persistence</span>
+              <span id="val-persistence" class="font-mono text-sky-300">0.50</span>
+            </div>
+            <input id="sl-persistence" type="range" min="0.15" max="0.88" step="0.02" value="0.50" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Amplitude (A₀)</span>
+              <span id="val-amplitude" class="font-mono text-sky-300">12.0</span>
+            </div>
+            <input id="sl-amplitude" type="range" min="2" max="30" step="0.5" value="12.0" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Sea Level (Y)</span>
+              <span id="val-seaLevel" class="font-mono text-sky-300">15</span>
+            </div>
+            <input id="sl-seaLevel" type="range" min="0" max="32" step="1" value="15" />
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB B: MULTI-NOISE & BIOMES ==================== -->
+      <section id="panel-multi" class="tab-panel hidden space-y-3.5">
+        <!-- Interactive Spline Curve Canvas -->
+        <div class="bg-slate-950/75 border border-slate-800 rounded-xl p-2.5 space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] uppercase tracking-wider text-sky-400 font-semibold">Interactive Spline Curve</span>
+            <button id="btn-reset-spline" class="text-[10px] text-slate-400 hover:text-white underline">Reset</button>
+          </div>
+          <canvas id="spline-canvas" width="272" height="92"
+            class="w-full h-[92px] rounded-lg bg-slate-900/90 border border-slate-800 cursor-ns-resize touch-none block"></canvas>
+          <div class="flex justify-between text-[9px] font-mono text-slate-500 px-1">
+            <span>Ocean</span><span>Coast</span><span>Inland</span><span>Peaks</span>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Continentalness</span>
+              <span id="val-continentalness" class="font-mono text-sky-300">8.5</span>
+            </div>
+            <input id="sl-continentalness" type="range" min="0" max="24" step="0.5" value="8.5" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Erosion Flattening</span>
+              <span id="val-erosion" class="font-mono text-sky-300">0.35</span>
+            </div>
+            <input id="sl-erosion" type="range" min="0" max="1" step="0.02" value="0.35" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Ridge Sharpness (1 - |n|)</span>
+              <span id="val-ridge" class="font-mono text-sky-300">5.0</span>
+            </div>
+            <input id="sl-ridge" type="range" min="0" max="22" step="0.5" value="5.0" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Temperature Shift</span>
+              <span id="val-tempShift" class="font-mono text-amber-300">+0.00</span>
+            </div>
+            <input id="sl-tempShift" class="accent-amber" type="range" min="-0.80" max="0.80" step="0.05" value="0" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Humidity Shift</span>
+              <span id="val-humidShift" class="font-mono text-emerald-300">+0.00</span>
+            </div>
+            <input id="sl-humidShift" class="accent-emerald" type="range" min="-0.80" max="0.80" step="0.05" value="0" />
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB C: 3D DENSITY & CAVES ==================== -->
+      <section id="panel-density" class="tab-panel hidden space-y-3.5">
+        <div class="bg-slate-950/75 border border-slate-800 rounded-xl p-2.5">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">3D Density Equation</span>
+            <span id="read-3d-badge" class="font-mono text-[10px] text-slate-400">2D Mode</span>
+          </div>
+          <div class="font-mono text-[11px] text-slate-200">
+            D(x,y,z) = <span class="text-emerald-300" id="read-3d-str">0.0</span>·N₃D + (H - y)·<span class="text-sky-300" id="read-3d-slope">0.90</span> &gt; 0
+          </div>
+        </div>
+
+        <!-- 3D Density Toggle -->
+        <div class="flex items-center justify-between bg-slate-900/65 border border-slate-800 rounded-xl px-3 py-2">
+          <div>
+            <div class="text-xs font-medium text-slate-100">3D Density Overhangs</div>
+            <div class="text-[10px] text-slate-400">Arches, cliffs &amp; floating terrain</div>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input id="chk-density3D" type="checkbox" class="sr-only toggle-checkbox emerald" />
+            <div class="toggle-track w-9 h-5 bg-slate-700 rounded-full transition-colors p-0.5">
+              <div class="toggle-dot w-4 h-4 bg-white rounded-full shadow transition-transform"></div>
+            </div>
+          </label>
+        </div>
+
+        <div id="density-sliders" class="space-y-2.5 transition-opacity">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">3D Overhang Strength</span>
+              <span id="val-density3DStr" class="font-mono text-emerald-300">15.0</span>
+            </div>
+            <input id="sl-density3DStr" class="accent-emerald" type="range" min="0" max="30" step="0.5" value="15" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Gravity Bias Slope</span>
+              <span id="val-gravitySlope" class="font-mono text-emerald-300">0.85</span>
+            </div>
+            <input id="sl-gravitySlope" class="accent-emerald" type="range" min="0.20" max="2.20" step="0.05" value="0.85" />
+          </div>
+        </div>
+
+        <!-- Caves Section -->
+        <div class="pt-2 border-t border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-xs font-medium text-slate-100">3D Swiss-Cheese Caves</div>
+              <div class="text-[10px] text-slate-400">Carves hollow caverns below surface</div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input id="chk-caves" type="checkbox" checked class="sr-only toggle-checkbox" />
+              <div class="toggle-track w-9 h-5 bg-slate-700 rounded-full transition-colors p-0.5">
+                <div class="toggle-dot w-4 h-4 bg-white rounded-full shadow transition-transform"></div>
+              </div>
+            </label>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Cave Threshold</span>
+              <span id="val-caveThreshold" class="font-mono text-sky-300">0.56</span>
+            </div>
+            <input id="sl-caveThreshold" type="range" min="0.34" max="0.78" step="0.01" value="0.56" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Cave Scale</span>
+              <span id="val-caveScale" class="font-mono text-sky-300">0.065</span>
+            </div>
+            <input id="sl-caveScale" type="range" min="0.030" max="0.130" step="0.002" value="0.065" />
+          </div>
+        </div>
+
+        <!-- Cutaway Slices & X-Ray -->
+        <div class="pt-2 border-t border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] uppercase tracking-wider text-amber-400 font-semibold">Cutaway Cross-Section</span>
+            <button id="btn-reset-slice" class="text-[10px] text-slate-400 hover:text-white underline">Full View</button>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Slice X</span>
+              <span id="val-sliceX" class="font-mono text-amber-300">48 / 48</span>
+            </div>
+            <input id="sl-sliceX" class="accent-amber" type="range" min="4" max="48" step="1" value="48" />
+          </div>
+
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-300">Slice Z</span>
+              <span id="val-sliceZ" class="font-mono text-amber-300">48 / 48</span>
+            </div>
+            <input id="sl-sliceZ" class="accent-amber" type="range" min="4" max="48" step="1" value="48" />
+          </div>
+
+          <div class="flex items-center justify-between bg-violet-950/35 border border-violet-500/30 rounded-xl px-3 py-2">
+            <div>
+              <div class="text-xs font-medium text-violet-200">X-Ray Translucent Rock</div>
+              <div class="text-[10px] text-violet-300/75">Reveals glowing underground caves</div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input id="chk-xray" type="checkbox" class="sr-only toggle-checkbox violet" />
+              <div class="toggle-track w-9 h-5 bg-slate-700 rounded-full transition-colors p-0.5">
+                <div class="toggle-dot w-4 h-4 bg-white rounded-full shadow transition-transform"></div>
+              </div>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB D: CHUNK TOOLS & EDITS ==================== -->
+      <section id="panel-chunks" class="tab-panel hidden space-y-3.5">
+        <!-- Tool Switcher -->
+        <div class="space-y-1.5">
+          <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Sculpt &amp; Inspect Mode</div>
+          <div class="grid grid-cols-3 gap-1.5 text-xs font-medium">
+            <button data-tool="inspect" class="drawer-tool-btn py-2 rounded-xl bg-sky-500/20 text-sky-300 border border-sky-500/40 transition">Inspect</button>
+            <button data-tool="place" class="drawer-tool-btn py-2 rounded-xl bg-slate-900/70 text-slate-400 border border-slate-800 hover:text-white transition">Place</button>
+            <button data-tool="break" class="drawer-tool-btn py-2 rounded-xl bg-slate-900/70 text-slate-400 border border-slate-800 hover:text-white transition">Break</button>
+          </div>
+        </div>
+
+        <!-- Block Palette (7 Sculpting Blocks) -->
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Block Palette</span>
+            <span id="active-palette-name" class="font-mono text-[10px] text-emerald-300">Wood</span>
+          </div>
+          <div id="block-palette-grid" class="grid grid-cols-4 gap-1.5"></div>
+        </div>
+
+        <!-- Chunk Coordinate Teleport & Walk Pad -->
+        <div class="bg-slate-900/65 border border-slate-800 rounded-xl p-2.5 space-y-2.5">
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Chunk Coordinates</span>
+            <span id="chunk-origin-badge" class="font-mono text-[11px] text-sky-300">Chunk (0, 0)</span>
+          </div>
+
+          <div class="flex items-center justify-between gap-2">
+            <!-- N/S/E/W Walk Pad -->
+            <div class="flex flex-col items-center gap-1">
+              <button data-walk="0,-1" class="walk-btn w-8 h-7 rounded-lg bg-slate-800 hover:bg-sky-500/30 border border-slate-700 text-xs font-mono transition active:scale-90">N</button>
+              <div class="flex gap-1">
+                <button data-walk="-1,0" class="walk-btn w-8 h-7 rounded-lg bg-slate-800 hover:bg-sky-500/30 border border-slate-700 text-xs font-mono transition active:scale-90">W</button>
+                <button data-walk="0,1" class="walk-btn w-8 h-7 rounded-lg bg-slate-800 hover:bg-sky-500/30 border border-slate-700 text-xs font-mono transition active:scale-90">S</button>
+                <button data-walk="1,0" class="walk-btn w-8 h-7 rounded-lg bg-slate-800 hover:bg-sky-500/30 border border-slate-700 text-xs font-mono transition active:scale-90">E</button>
+              </div>
+            </div>
+
+            <!-- Direct Teleport Inputs -->
+            <div class="flex-1 space-y-1.5">
+              <div class="grid grid-cols-2 gap-1.5">
+                <label class="block">
+                  <span class="text-[10px] text-slate-500 font-mono">Cx</span>
+                  <input id="tp-cx" type="number" value="0" class="w-full bg-slate-950/90 border border-slate-700 rounded-lg px-2 py-1 font-mono text-xs text-slate-100 outline-none focus:border-sky-500" />
+                </label>
+                <label class="block">
+                  <span class="text-[10px] text-slate-500 font-mono">Cz</span>
+                  <input id="tp-cz" type="number" value="0" class="w-full bg-slate-950/90 border border-slate-700 rounded-lg px-2 py-1 font-mono text-xs text-slate-100 outline-none focus:border-sky-500" />
+                </label>
+              </div>
+              <button id="btn-tp-chunk" class="w-full py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-sky-300 transition active:scale-95">
+                Teleport Chunk
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Region File (.mca) Inspector -->
+        <div class="bg-slate-900/65 border border-slate-800 rounded-xl p-2.5 space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Region Storage (r.X.Z.mca)</span>
+            <span id="region-disk-kb" class="font-mono text-[11px] text-emerald-400">0.0 KB</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-1.5 text-center font-mono text-[11px]">
+            <div class="bg-slate-950/75 rounded-lg py-1.5 border border-slate-800">
+              <div class="text-[9px] text-slate-500">Procedural (0 B)</div>
+              <div id="stat-proc-chunks" class="text-sky-300 font-semibold">9 ch</div>
+            </div>
+            <div class="bg-slate-950/75 rounded-lg py-1.5 border border-slate-800">
+              <div class="text-[9px] text-slate-500">Modified (.mca)</div>
+              <div id="stat-mod-chunks" class="text-amber-300 font-semibold">0 ch</div>
+            </div>
+          </div>
+
+          <div id="region-files-list" class="font-mono text-[10px] text-slate-400 max-h-24 overflow-y-auto slim-scroll space-y-1">
+            <div class="italic text-slate-500">Unedited chunks cost 0 bytes. Place or break a block to save a chunk delta.</div>
+          </div>
+
+          <div class="flex gap-1.5 pt-1">
+            <button id="btn-clear-edits" disabled
+              class="flex-1 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-40 disabled:pointer-events-none border border-rose-500/35 text-rose-300 text-xs font-medium transition active:scale-95">
+              Clear All Edits
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Drawer Footer Controls Hint -->
+    <div class="px-3.5 py-2 border-t border-slate-800/80 bg-slate-950/50 text-[10px] text-slate-400 flex items-center justify-between">
+      <span>Drag: Orbit · Pinch/Wheel: Zoom</span>
+      <span class="font-mono text-slate-500">WASD: Move</span>
+    </div>
+  </aside>
+
+  <!-- ====================================================================== -->
+  <!-- TOP-RIGHT LIVE BLOCK MATH INSPECTOR HUD                                -->
+  <!-- ====================================================================== -->
+  <div id="inspector-wrapper" class="fixed top-16 right-3 z-20 flex flex-col items-end gap-1.5 pointer-events-none">
+    <!-- Mobile Compact Toggle Pill -->
+    <button id="btn-toggle-inspector" class="pointer-events-auto sm:hidden glass px-2.5 py-1.5 rounded-xl text-[11px] font-medium text-sky-300 flex items-center gap-1.5">
+      <span id="mob-insp-dot" class="w-2 h-2 rounded-sm bg-emerald-400"></span>
+      <span>Math HUD</span>
+    </button>
+
+    <!-- Inspector Card -->
+    <div id="inspector-card" class="pointer-events-auto hidden sm:block w-[248px] glass rounded-2xl p-3 text-xs">
+      <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-700/50">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span id="insp-swatch" class="w-2.5 h-2.5 rounded-sm bg-emerald-500 border border-white/25 shrink-0"></span>
+          <span id="insp-name" class="font-semibold text-slate-100 truncate">Tap / Hover Block</span>
+        </div>
+        <span id="insp-disk-badge" class="px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 text-sky-300 border border-slate-700 shrink-0">0 B</span>
+      </div>
+
+      <div id="insp-placeholder" class="text-[11px] text-slate-400 leading-relaxed">
+        Hover or tap any voxel to inspect its coordinates, biome, 2D height, and 3D density.
+      </div>
+
+      <div id="insp-details" class="hidden space-y-1.5 font-mono text-[11px]">
+        <div class="flex justify-between">
+          <span class="text-slate-400">World (x,y,z)</span>
+          <span id="insp-xyz" class="text-slate-100">0, 0, 0</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">Chunk (cx,cz)</span>
+          <span id="insp-chunk" class="text-sky-300">0, 0</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">Region</span>
+          <span id="insp-region" class="text-slate-300">r.0.0.mca</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">Biome</span>
+          <span id="insp-biome" class="text-emerald-300 font-sans font-medium">Lush Plains</span>
+        </div>
+        <div class="my-1 border-t border-slate-800"></div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">H(x,z)</span>
+          <span id="insp-h2d" class="text-sky-300">0.00</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-slate-400">Density(x,y,z)</span>
+          <span id="insp-density" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">+0.00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- BOTTOM-RIGHT QUICK TOOL & VIEWPORT BAR                                 -->
+  <!-- ====================================================================== -->
+  <div class="fixed bottom-3 right-3 z-20 flex flex-wrap items-center justify-end gap-2">
+    <!-- Quick Sculpt Mode Pill -->
+    <div class="glass rounded-xl p-1 flex items-center gap-0.5 text-[11px] font-medium">
+      <button data-tool="inspect" class="quick-tool-btn px-2.5 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 transition">Inspect</button>
+      <button data-tool="place" class="quick-tool-btn px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white transition flex items-center gap-1.5">
+        <span id="quick-block-dot" class="w-2.5 h-2.5 rounded-sm bg-amber-600 border border-white/30"></span>
+        <span>Place</span>
+      </button>
+      <button data-tool="break" class="quick-tool-btn px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Break</button>
+    </div>
+
+    <!-- Grid Size & Chunk Border Controls -->
+    <div class="glass rounded-xl p-1 flex items-center gap-1 text-[11px] font-mono">
+      <button data-grid="2" class="grid-size-btn px-2 py-1.5 rounded-lg text-slate-400 hover:text-white transition" title="2×2 Chunks (32×32)">2×2</button>
+      <button data-grid="3" class="grid-size-btn px-2 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 font-semibold transition" title="3×3 Chunks (48×48)">3×3</button>
+      <div class="w-px h-4 bg-slate-700/70 mx-0.5"></div>
+      <button id="btn-grid-lines" title="Toggle Chunk Borders" class="px-2 py-1.5 rounded-lg bg-sky-500/15 text-sky-300 hover:bg-sky-500/25 transition">
+        Grid
+      </button>
+      <span id="fps-readout" class="hidden sm:inline px-2 text-emerald-400">60 FPS</span>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 1: COMMUNITY SEED & CHUNK HUB                                    -->
+  <!-- ====================================================================== -->
+  <div id="modal-hub" class="hidden fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
+    <div class="glass-solid w-full max-w-3xl max-h-[88vh] rounded-2xl flex flex-col overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <span>Community Seed &amp; Chunk Hub</span>
+            <span id="hub-sync-tag" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Live</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">Explore, upvote, and load procedural worlds published by visitors.</p>
+        </div>
+        <button data-close="modal-hub" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="px-5 py-2.5 border-b border-slate-800/80 bg-slate-900/50 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-1 text-xs font-medium">
+          <button data-hub-filter="all" class="hub-filter-btn px-3 py-1 rounded-lg bg-sky-500/20 text-sky-300 transition">All</button>
+          <button data-hub-filter="trending" class="hub-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition">Trending</button>
+          <button data-hub-filter="featured" class="hub-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition">Featured</button>
+        </div>
+        <button id="btn-hub-publish-cta" class="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold transition">
+          + Publish Current World
+        </button>
+      </div>
+
+      <!-- Gallery Grid -->
+      <div id="hub-gallery-grid" class="flex-1 overflow-y-auto slim-scroll p-5 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <!-- Cards rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 2: PUBLISH CREATION TO HUB                                       -->
+  <!-- ====================================================================== -->
+  <div id="modal-publish" class="hidden fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-solid w-full max-w-md rounded-2xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h2 class="text-sm font-bold text-white">Publish to Community Hub</h2>
+        <button data-close="modal-publish" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">Creation Title</label>
+          <input id="pub-title" type="text" maxlength="48" placeholder="e.g. Emerald Cliff Overhangs"
+            class="w-full bg-slate-950 border border-slate-700 focus:border-sky-500 rounded-xl px-3 py-2 text-xs text-white outline-none" />
+        </div>
+
+        <div class="bg-slate-900/75 border border-slate-800 rounded-xl p-3 space-y-1.5 text-xs">
+          <div class="flex justify-between">
+            <span class="text-slate-400">Creator</span>
+            <span id="pub-creator" class="font-mono text-sky-300">Builder</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Seed</span>
+            <span id="pub-seed" class="font-mono text-slate-200">prism-704</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Custom Voxel Edits</span>
+            <span id="pub-edits" class="font-mono text-amber-300">0 blocks</span>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-1">
+          <button data-close="modal-publish" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition">Cancel</button>
+          <button id="btn-confirm-publish" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold transition active:scale-95">
+            Publish Publicly
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 3: LIVE COLLABORATIVE SHARED ROOMS                               -->
+  <!-- ====================================================================== -->
+  <div id="modal-room" class="hidden fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-solid w-full max-w-md rounded-2xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-bold text-white">Live Shared Rooms</h2>
+          <p class="text-[11px] text-slate-400">Sync seeds, formula sliders, and block edits in real time.</p>
+        </div>
+        <button data-close="modal-room" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Not In Room View -->
+      <div id="room-lobby-view" class="p-5 space-y-4">
+        <div id="room-offline-warn" class="hidden bg-amber-500/15 border border-amber-500/35 rounded-xl p-3 text-xs text-amber-200">
+          Live collaboration requires an online connection. You are currently in Local Mode.
+        </div>
+
+        <button id="btn-create-room"
+          class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-semibold transition active:scale-95">
+          Create New Shared Room
+        </button>
+
+        <div class="flex items-center gap-2 text-[11px] text-slate-500">
+          <div class="flex-1 h-px bg-slate-800"></div>
+          <span>OR JOIN WITH CODE</span>
+          <div class="flex-1 h-px bg-slate-800"></div>
+        </div>
+
+        <div class="flex gap-2">
+          <input id="inp-room-code" type="text" maxlength="6" placeholder="e.g. K7P9X"
+            class="flex-1 bg-slate-950 border border-slate-700 focus:border-sky-500 rounded-xl px-3 py-2 font-mono text-sm uppercase tracking-widest text-white outline-none text-center" />
+          <button id="btn-join-room"
+            class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold transition active:scale-95">
+            Join
+          </button>
+        </div>
+      </div>
+
+      <!-- Connected In Room View -->
+      <div id="room-active-view" class="hidden p-5 space-y-4">
+        <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3.5 flex items-center justify-between">
+          <div>
+            <div class="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">Connected Room Code</div>
+            <div id="active-room-code" class="font-mono text-xl font-bold tracking-widest text-white mt-0.5 selectable">-----</div>
+          </div>
+          <button id="btn-copy-room-code" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-xs font-medium transition">
+            Copy Code
+          </button>
+        </div>
+
+        <div class="space-y-1.5">
+          <div class="flex justify-between text-xs">
+            <span class="text-slate-400 font-medium">Active Builders</span>
+            <span id="room-member-count" class="font-mono text-emerald-300">1 online</span>
+          </div>
+          <div id="room-members-list" class="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 max-h-36 overflow-y-auto slim-scroll space-y-1.5 text-xs"></div>
+        </div>
+
+        <button id="btn-leave-room"
+          class="w-full py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 text-xs font-semibold transition">
+          Leave Shared Room
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!-- MODAL 4: PROFILE / IDENTITY & CLOUD STATUS                             -->
+  <!-- ====================================================================== -->
+  <div id="modal-profile" class="hidden fixed inset-0 z-40 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-solid w-full max-w-md rounded-2xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h2 class="text-sm font-bold text-white">Builder Identity</h2>
+        <button data-close="modal-profile" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">Display Nickname (Zero Sign-Up)</label>
+          <div class="flex gap-2">
+            <input id="inp-nickname" type="text" maxlength="20"
+              class="flex-1 bg-slate-950 border border-slate-700 focus:border-sky-500 rounded-xl px-3 py-2 text-xs text-white outline-none" />
+            <button id="btn-save-nickname" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold transition">Save</button>
+          </div>
+        </div>
+
+        <div class="bg-slate-900/75 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">Sync Status</span>
+            <span id="profile-cloud-status" class="font-mono text-amber-300">Connecting...</span>
+          </div>
+          <div>
+            <div class="text-slate-400 mb-1">Your User ID</div>
+            <div id="profile-user-id" class="font-mono text-[11px] text-slate-200 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 break-all selectable">
+              Initializing...
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Overlay -->
+  <div id="toast-root" class="fixed bottom-16 sm:bottom-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none"></div>
+
+  <!-- ====================================================================== -->
+  <!-- MAIN APPLICATION MODULE (THREE.JS ENGINE + FIRESTORE COLLABORATION)    -->
+  <!-- ====================================================================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import {
+      getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
+      onSnapshot, collection, addDoc, increment
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // ========================================================================
+    // 1. DETERMINISTIC SEEDED HASHING & 2D/3D PERLIN NOISE ENGINE
+    // ========================================================================
+
+    function hashSeed(input) {
+      const str = String(input ?? '0').trim();
+      if (/^-?\d+$/.test(str)) {
+        let n = parseInt(str, 10) >>> 0;
+        n = Math.imul(n ^ (n >>> 16), 0x45d9f3b) >>> 0;
+        n = Math.imul(n ^ (n >>> 16), 0x45d9f3b) >>> 0;
+        return (n ^ (n >>> 16)) >>> 0;
+      }
+      let h = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      return h >>> 0;
+    }
+
+    function mulberry32(seed) {
+      let a = seed >>> 0;
+      return () => {
+        a |= 0;
+        a = (a + 0x6d2b79f5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function coordHash(x, y, z) {
+      let n = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 2147483647)) | 0;
+      n = (n ^ (n >>> 13)) | 0;
+      n = Math.imul(n, 1274126177);
+      return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+    }
+
+    class SeededPerlin {
+      constructor(seedInt) {
+        this.perm = new Uint8Array(512);
+        const p = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) p[i] = i;
+        const rand = mulberry32(seedInt);
+        for (let i = 255; i > 0; i--) {
+          const j = (rand() * (i + 1)) | 0;
+          const tmp = p[i];
+          p[i] = p[j];
+          p[j] = tmp;
+        }
+        for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+
+        // Independent deterministic channel offsets
+        const off = () => (rand() - 0.5) * 2400;
+        this.bX = off(); this.bZ = off();
+        this.cX = off(); this.cZ = off();
+        this.eX = off(); this.eZ = off();
+        this.rX = off(); this.rZ = off();
+        this.tX = off(); this.tZ = off();
+        this.hX = off(); this.hZ = off();
+        this.dX = off() * 0.5; this.dY = off() * 0.5; this.dZ = off() * 0.5;
+        this.cvX = off() * 0.5; this.cvY = off() * 0.5; this.cvZ = off() * 0.5;
+      }
+
+      static grad2(h, x, y) {
+        switch (h & 7) {
+          case 0: return x + y;
+          case 1: return -x + y;
+          case 2: return x - y;
+          case 3: return -x - y;
+          case 4: return x;
+          case 5: return -x;
+          case 6: return y;
+          default: return -y;
+        }
+      }
+
+      static grad3(h, x, y, z) {
+        const g = h & 15;
+        const u = g < 8 ? x : y;
+        const v = g < 4 ? y : (g === 12 || g === 14 ? x : z);
+        return ((g & 1) === 0 ? u : -u) + ((g & 2) === 0 ? v : -v);
+      }
+
+      noise2D(x, y) {
+        const perm = this.perm;
+        const xi = Math.floor(x), yi = Math.floor(y);
+        const X = xi & 255, Y = yi & 255;
+        const xf = x - xi, yf = y - yi;
+        const u = xf * xf * xf * (xf * (xf * 6 - 15) + 10);
+        const v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
+
+        const aa = perm[perm[X] + Y], ab = perm[perm[X] + Y + 1];
+        const ba = perm[perm[X + 1] + Y], bb = perm[perm[X + 1] + Y + 1];
+
+        const x1 = SeededPerlin.grad2(aa, xf, yf) + u * (SeededPerlin.grad2(ba, xf - 1, yf) - SeededPerlin.grad2(aa, xf, yf));
+        const x2 = SeededPerlin.grad2(ab, xf, yf - 1) + u * (SeededPerlin.grad2(bb, xf - 1, yf - 1) - SeededPerlin.grad2(ab, xf, yf - 1));
+        return x1 + v * (x2 - x1);
+      }
+
+      noise3D(x, y, z) {
+        const perm = this.perm;
+        const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+        const X = xi & 255, Y = yi & 255, Z = zi & 255;
+        const xf = x - xi, yf = y - yi, zf = z - zi;
+        const u = xf * xf * xf * (xf * (xf * 6 - 15) + 10);
+        const v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
+        const w = zf * zf * zf * (zf * (zf * 6 - 15) + 10);
+
+        const A = perm[X] + Y, AA = perm[A] + Z, AB = perm[A + 1] + Z;
+        const B = perm[X + 1] + Y, BA = perm[B] + Z, BB = perm[B + 1] + Z;
+
+        const g000 = SeededPerlin.grad3(perm[AA], xf, yf, zf);
+        const g100 = SeededPerlin.grad3(perm[BA], xf - 1, yf, zf);
+        const g010 = SeededPerlin.grad3(perm[AB], xf, yf - 1, zf);
+        const g110 = SeededPerlin.grad3(perm[BB], xf - 1, yf - 1, zf);
+        const g001 = SeededPerlin.grad3(perm[AA + 1], xf, yf, zf - 1);
+        const g101 = SeededPerlin.grad3(perm[BA + 1], xf - 1, yf, zf - 1);
+        const g011 = SeededPerlin.grad3(perm[AB + 1], xf, yf - 1, zf - 1);
+        const g111 = SeededPerlin.grad3(perm[BB + 1], xf - 1, yf - 1, zf - 1);
+
+        const x00 = g000 + u * (g100 - g000);
+        const x10 = g010 + u * (g110 - g010);
+        const x01 = g001 + u * (g101 - g001);
+        const x11 = g011 + u * (g111 - g011);
+
+        const y0 = x00 + v * (x10 - x00);
+        const y1 = x01 + v * (x11 - x01);
+        return y0 + w * (y1 - y0);
+      }
+    }
+
+    // ========================================================================
+    // 2. VOXEL REGISTRY, FEATURED STARTER PRESETS & CORE STATE
+    // ========================================================================
+
+    const WORLD_H = 48;
+
+    const BLOCK = {
+      AIR: 0,
+      BEDROCK: 1,
+      DEEPSLATE: 2,
+      STONE: 3,
+      DIRT: 4,
+      GRASS: 5,
+      SAND: 6,
+      SNOW: 7,
+      WATER: 8,
+      WOOD: 9,
+      LEAVES: 10,
+      GLASS: 11,
+      LAMP: 12,
+    };
+
+    const BLOCK_INFO = {
+      [BLOCK.AIR]:       { name: 'Air',        hex: '#1e293b', rgb: [0.12, 0.16, 0.23], translucent: true },
+      [BLOCK.BEDROCK]:   { name: 'Bedrock',    hex: '#242730', rgb: [0.16, 0.17, 0.21] },
+      [BLOCK.DEEPSLATE]: { name: 'Deepslate',  hex: '#3b414c', rgb: [0.25, 0.28, 0.34] },
+      [BLOCK.STONE]:     { name: 'Stone',      hex: '#7b828e', rgb: [0.49, 0.52, 0.56] },
+      [BLOCK.DIRT]:      { name: 'Dirt',       hex: '#7e563c', rgb: [0.51, 0.35, 0.24] },
+      [BLOCK.GRASS]:     { name: 'Grass',      hex: '#579a44', rgb: [0.36, 0.63, 0.28] },
+      [BLOCK.SAND]:      { name: 'Sand',       hex: '#dfd199', rgb: [0.87, 0.81, 0.59] },
+      [BLOCK.SNOW]:      { name: 'Snow',       hex: '#eef5fb', rgb: [0.93, 0.96, 0.99] },
+      [BLOCK.WATER]:     { name: 'Water',      hex: '#2579c9', rgb: [0.14, 0.49, 0.82], translucent: true },
+      [BLOCK.WOOD]:      { name: 'Wood',       hex: '#a67442', rgb: [0.66, 0.46, 0.26] },
+      [BLOCK.LEAVES]:    { name: 'Leaves',     hex: '#2f8237', rgb: [0.19, 0.52, 0.22] },
+      [BLOCK.GLASS]:     { name: 'Glass',      hex: '#93e2ff', rgb: [0.58, 0.89, 1.00], translucent: true },
+      [BLOCK.LAMP]:      { name: 'Glow Lamp',  hex: '#ffe169', rgb: [1.00, 0.88, 0.42], emissive: true },
+    };
+
+    const PALETTE_BLOCKS = [
+      BLOCK.STONE, BLOCK.GRASS, BLOCK.WOOD, BLOCK.LEAVES,
+      BLOCK.GLASS, BLOCK.WATER, BLOCK.LAMP
+    ];
+
+    const DEFAULT_SPLINE = [-0.72, -0.10, 0.22, 0.86];
+
+    const state = {
+      // Multi-chunk window (2 => 2x2 = 32x32, 3 => 3x3 = 48x48)
+      chunkGridSize: 3,
+      chunkOriginX: 0,
+      chunkOriginZ: 0,
+
+      // Seed & Noise instance
+      seedText: 'prism-704',
+      seedInt: 0,
+      noise: null,
+
+      // Tab A: Perlin & Octaves
+      octaves: 4,
+      frequency: 0.025,
+      lacunarity: 2.0,
+      persistence: 0.50,
+      amplitude: 12.0,
+      seaLevel: 15,
+
+      // Tab B: Multi-Noise & Biomes
+      continentalness: 8.5,
+      erosion: 0.35,
+      ridge: 5.0,
+      tempShift: 0.0,
+      humidShift: 0.0,
+      splinePoints: [...DEFAULT_SPLINE],
+
+      // Tab C: 3D Density & Caves
+      density3D: false,
+      density3DStr: 15.0,
+      gravitySlope: 0.85,
+      cavesEnabled: true,
+      caveThreshold: 0.56,
+      caveScale: 0.065,
+      sliceX: 48,
+      sliceZ: 48,
+      xray: false,
+
+      // Tab D: Chunk Tools & Sparse Edits
+      tool: 'inspect', // 'inspect' | 'place' | 'break'
+      selectedBlock: BLOCK.WOOD,
+      showChunkGrid: true,
+
+      // Sparse custom block edits: { "wx_wy_wz": blockId }
+      edits: {},
+    };
+
+    // Built-in Featured Starter Creations for the Community Hub
+    const FEATURED_CREATIONS = [
+      {
+        id: 'feat-floating',
+        featured: true,
+        title: 'Shattered Floating Isles',
+        creator: 'ChunkLab Curated',
+        upvotes: 128,
+        seedText: 'aether-991',
+        badges: ['3D Density', 'Sky Isles'],
+        params: {
+          octaves: 3, frequency: 0.022, lacunarity: 2.0, persistence: 0.50, amplitude: 11, seaLevel: 4,
+          continentalness: 6.5, erosion: 0.20, ridge: 6.0, tempShift: 0.05, humidShift: 0.25,
+          splinePoints: [-0.45, 0.05, 0.35, 0.85],
+          density3D: true, density3DStr: 25.5, gravitySlope: 0.34,
+          cavesEnabled: false, caveThreshold: 0.58, caveScale: 0.062, xray: false,
+          chunkOriginX: 0, chunkOriginZ: 0
+        },
+        edits: {}
+      },
+      {
+        id: 'feat-caverns',
+        featured: true,
+        title: 'Swiss Cheese Caverns',
+        creator: 'ChunkLab Curated',
+        upvotes: 96,
+        seedText: 'deep-hollow-42',
+        badges: ['3D Caves', 'Cutaway'],
+        params: {
+          octaves: 4, frequency: 0.025, lacunarity: 2.0, persistence: 0.48, amplitude: 12, seaLevel: 11,
+          continentalness: 9.0, erosion: 0.28, ridge: 6.5, tempShift: -0.10, humidShift: 0.10,
+          splinePoints: [-0.65, -0.05, 0.30, 0.85],
+          density3D: true, density3DStr: 17.0, gravitySlope: 0.78,
+          cavesEnabled: true, caveThreshold: 0.46, caveScale: 0.072, xray: false,
+          sliceFractionX: 0.72, chunkOriginX: 0, chunkOriginZ: 0
+        },
+        edits: {}
+      },
+      {
+        id: 'feat-alpine',
+        featured: true,
+        title: 'Alpine Ridges',
+        creator: 'ChunkLab Curated',
+        upvotes: 84,
+        seedText: 'summit-frost-7',
+        badges: ['Sharp Spline', 'Snow Peaks'],
+        params: {
+          octaves: 5, frequency: 0.021, lacunarity: 2.15, persistence: 0.52, amplitude: 13.5, seaLevel: 12,
+          continentalness: 16.5, erosion: 0.50, ridge: 17.0, tempShift: -0.35, humidShift: 0.15,
+          splinePoints: [-0.90, -0.30, 0.25, 1.00],
+          density3D: false, density3DStr: 12.0, gravitySlope: 0.90,
+          cavesEnabled: true, caveThreshold: 0.58, caveScale: 0.065, xray: false,
+          chunkOriginX: 0, chunkOriginZ: 0
+        },
+        edits: {}
+      },
+      {
+        id: 'feat-archipelago',
+        featured: true,
+        title: 'Sunlit Coral Archipelago',
+        creator: 'ChunkLab Curated',
+        upvotes: 71,
+        seedText: 'lagoon-2026',
+        badges: ['Ocean', 'Warm Biomes'],
+        params: {
+          octaves: 4, frequency: 0.028, lacunarity: 2.05, persistence: 0.46, amplitude: 10.5, seaLevel: 20,
+          continentalness: 17.0, erosion: 0.40, ridge: 4.5, tempShift: 0.35, humidShift: 0.20,
+          splinePoints: [-0.88, -0.50, 0.35, 0.78],
+          density3D: false, density3DStr: 10.0, gravitySlope: 0.90,
+          cavesEnabled: true, caveThreshold: 0.58, caveScale: 0.065, xray: false,
+          chunkOriginX: 0, chunkOriginZ: 0
+        },
+        edits: {}
+      }
+    ];
+
+    // ========================================================================
+    // 3. PROCEDURAL MATH PIPELINE (PERLIN, SPLINE, BIOMES, 3D DENSITY, CAVES)
+    // ========================================================================
+
+    function worldSize() {
+      return state.chunkGridSize * 16;
+    }
+
+    function worldOriginX() {
+      return state.chunkOriginX * 16;
+    }
+
+    function worldOriginZ() {
+      return state.chunkOriginZ * 16;
+    }
+
+    function worldToChunk(w) {
+      return Math.floor(w / 16);
+    }
+
+    function chunkToRegion(c) {
+      return Math.floor(c / 32);
+    }
+
+    /**
+     * Smooth piecewise Hermite spline across 4 interactive control points
+     * at input x = [-1, -0.33, 0.33, 1].
+     */
+    function evaluateSpline(c) {
+      const pts = state.splinePoints;
+      const clamped = Math.max(-1, Math.min(1, c));
+      const tNorm = (clamped + 1) * 0.5; // [0..1]
+      const segF = tNorm * 3;
+      const idx = Math.min(2, Math.floor(segF));
+      const localT = segF - idx;
+      const smooth = localT * localT * (3 - 2 * localT);
+      return pts[idx] + smooth * (pts[idx + 1] - pts[idx]);
+    }
+
+    function classifyBiome(temp, humid, height, sea) {
+      if (height <= sea - 3) return 'Deep Ocean';
+      if (height <= sea + 1) return temp < -0.32 ? 'Frozen Shore' : 'Warm Beach';
+      if (height >= WORLD_H - 13 && temp < 0.25) return 'Alpine Peaks';
+      if (temp < -0.32) return humid > 0.1 ? 'Snowy Taiga' : 'Frozen Tundra';
+      if (temp > 0.28) return humid < 0.05 ? 'Arid Desert' : 'Lush Jungle';
+      if (humid > 0.25) return 'Emerald Forest';
+      if (humid < -0.25) return 'Golden Savanna';
+      return 'Temperate Plains';
+    }
+
+    function evaluateColumn2D(wx, wz) {
+      const n = state.noise;
+
+      // 1) Multi-octave 2D Perlin noise
+      let hOct = 0;
+      let amp = state.amplitude;
+      let freq = state.frequency;
+      for (let i = 0; i < state.octaves; i++) {
+        hOct += amp * n.noise2D(wx * freq + n.bX, wz * freq + n.bZ);
+        freq *= state.lacunarity;
+        amp *= state.persistence;
+      }
+
+      // 2) Multi-Noise channels
+      const contRaw = n.noise2D(wx * 0.011 + n.cX, wz * 0.011 + n.cZ);
+      const contSplined = evaluateSpline(contRaw);
+
+      const erosRaw = (n.noise2D(wx * 0.014 + n.eX, wz * 0.014 + n.eZ) + 1) * 0.5;
+      const erosionMul = 1.0 - state.erosion * (erosRaw * 0.85);
+
+      const weirdRaw = n.noise2D(wx * 0.022 + n.rX, wz * 0.022 + n.rZ);
+      const ridgeVal = Math.pow(Math.max(0, 1.0 - Math.abs(weirdRaw)), 2.2);
+
+      const temp = Math.max(-1, Math.min(1, n.noise2D(wx * 0.009 + n.tX, wz * 0.009 + n.tZ) + state.tempShift));
+      const humid = Math.max(-1, Math.min(1, n.noise2D(wx * 0.009 + n.hX, wz * 0.009 + n.hZ) + state.humidShift));
+
+      const height2D = Math.max(2, Math.min(
+        WORLD_H - 3,
+        18.0 + contSplined * state.continentalness + hOct * erosionMul + (ridgeVal - 0.30) * state.ridge * erosionMul
+      ));
+
+      return { height2D, contRaw, erosRaw, ridgeVal, temp, humid };
+    }
+
+    function evaluateDensity3D(wx, wy, wz, height2D) {
+      if (!state.density3D) {
+        return (height2D - wy) * state.gravitySlope;
+      }
+      const n = state.noise;
+      const f = 0.056;
+      const n1 = n.noise3D(wx * f + n.dX, wy * f * 1.15 + n.dY, wz * f + n.dZ);
+      const n2 = n.noise3D(wx * f * 2 + n.dX, wy * f * 2.3 + n.dY, wz * f * 2 + n.dZ);
+      const n3d = n1 * 0.72 + n2 * 0.28;
+      return n3d * state.density3DStr + (height2D - wy) * state.gravitySlope;
+    }
+
+    function evaluateCaveVal(wx, wy, wz) {
+      if (!state.cavesEnabled) return 0;
+      const n = state.noise;
+      const f = state.caveScale;
+      const c1 = n.noise3D(wx * f + n.cvX, wy * f * 1.35 + n.cvY, wz * f + n.cvZ);
+      const c2 = n.noise3D(wx * f * 1.9 + n.cvX + 29, wy * f * 2.2 + n.cvY, wz * f * 1.9 + n.cvZ + 17);
+      return ((c1 * 0.75 + c2 * 0.25) + 1) * 0.5;
+    }
+
+    // ========================================================================
+    // 4. VOXEL BUFFER GENERATION & FAST FACE-CULLED MESH BUILDER
+    // ========================================================================
+
+    let voxelData = new Uint8Array(48 * WORLD_H * 48);
+    let heightMap = new Float32Array(48 * 48);
+    let tempMap = new Float32Array(48 * 48);
+    let humidMap = new Float32Array(48 * 48);
+
+    function vIdx(x, y, z, sz) {
+      return (y * sz + z) * sz + x;
+    }
+
+    function generateVoxelBuffer() {
+      const sz = worldSize();
+      const total = sz * WORLD_H * sz;
+      if (voxelData.length !== total) {
+        voxelData = new Uint8Array(total);
+        heightMap = new Float32Array(sz * sz);
+        tempMap = new Float32Array(sz * sz);
+        humidMap = new Float32Array(sz * sz);
+      }
+
+      const ox = worldOriginX();
+      const oz = worldOriginZ();
+      const sea = state.seaLevel;
+      const solidCol = new Uint8Array(WORLD_H);
+
+      for (let z = 0; z < sz; z++) {
+        const wz = oz + z;
+        for (let x = 0; x < sz; x++) {
+          const wx = ox + x;
+          const col = evaluateColumn2D(wx, wz);
+          const i2 = z * sz + x;
+          heightMap[i2] = col.height2D;
+          tempMap[i2] = col.temp;
+          humidMap[i2] = col.humid;
+
+          // Pass 1: Density + Cave Carvers
+          for (let y = 0; y < WORLD_H; y++) {
+            if (y === 0) {
+              solidCol[0] = 1;
+              continue;
+            }
+            let solid = evaluateDensity3D(wx, y, wz, col.height2D) > 0;
+            if (solid && state.cavesEnabled && y >= 2 && y < WORLD_H - 2) {
+              const cv = evaluateCaveVal(wx, y, wz);
+              const lidBias = y > col.height2D - 2 ? 0.06 : 0;
+              if (cv > state.caveThreshold + lidBias) solid = false;
+            }
+            solidCol[y] = solid ? 1 : 0;
+          }
+
+          // Pass 2: Strata & Surface Biome Painting
+          let depth = 0;
+          let hitGround = false;
+          let sandy = false;
+          for (let y = WORLD_H - 1; y >= 0; y--) {
+            const idx = vIdx(x, y, z, sz);
+            if (!solidCol[y]) {
+              depth = 0;
+              sandy = false;
+              voxelData[idx] = (!hitGround && y <= sea) ? BLOCK.WATER : BLOCK.AIR;
+              continue;
+            }
+            hitGround = true;
+
+            if (y === 0 || (y === 1 && coordHash(wx, 1, wz) > 0.45)) {
+              voxelData[idx] = BLOCK.BEDROCK;
+            } else if (depth === 0) {
+              const hotDry = col.temp > 0.28 && col.humid < 0.05;
+              const cold = col.temp < -0.32;
+              const peak = y >= WORLD_H - 13 && col.temp < 0.25;
+              if (y <= sea + 1 && !cold) {
+                voxelData[idx] = BLOCK.SAND; sandy = true;
+              } else if (hotDry && y > sea) {
+                voxelData[idx] = BLOCK.SAND; sandy = true;
+              } else if (peak || (cold && y > sea + 1)) {
+                voxelData[idx] = BLOCK.SNOW; sandy = false;
+              } else if (y > sea) {
+                voxelData[idx] = BLOCK.GRASS; sandy = false;
+              } else {
+                voxelData[idx] = BLOCK.SAND; sandy = true;
+              }
+            } else if (depth <= 3) {
+              voxelData[idx] = sandy ? BLOCK.SAND : (y > sea - 3 ? BLOCK.DIRT : BLOCK.STONE);
+            } else {
+              const deepCut = 7 + (coordHash(wx, y, wz) > 0.5 ? 2 : 0);
+              voxelData[idx] = y <= deepCut ? BLOCK.DEEPSLATE : BLOCK.STONE;
+            }
+            depth++;
+          }
+        }
+      }
+
+      // Pass 3: Apply sparse custom edits inside active viewport
+      for (const [k, blockId] of Object.entries(state.edits)) {
+        const parts = k.split('_');
+        if (parts.length !== 3) continue;
+        const wx = parseInt(parts[0], 10);
+        const wy = parseInt(parts[1], 10);
+        const wz = parseInt(parts[2], 10);
+        const lx = wx - ox;
+        const lz = wz - oz;
+        if (lx >= 0 && lx < sz && wy >= 0 && wy < WORLD_H && lz >= 0 && lz < sz) {
+          voxelData[vIdx(lx, wy, lz, sz)] = blockId;
+        }
+      }
+    }
+
+    // Resizable TypedArray Geometry Builder
+    class MeshBuilder {
+      constructor(initialFaces = 16384) {
+        this.pos = new Float32Array(initialFaces * 18);
+        this.norm = new Float32Array(initialFaces * 18);
+        this.col = new Float32Array(initialFaces * 18);
+        this.count = 0;
+      }
+
+      grow() {
+        const len = this.pos.length * 2;
+        const p = new Float32Array(len), n = new Float32Array(len), c = new Float32Array(len);
+        p.set(this.pos); n.set(this.norm); c.set(this.col);
+        this.pos = p; this.norm = n; this.col = c;
+      }
+
+      addQuad(v0, v1, v2, v3, nx, ny, nz, r, g, b, ao0, ao1, ao2, ao3) {
+        if (this.count + 18 > this.pos.length) this.grow();
+        const p = this.pos, nm = this.norm, cl = this.col;
+        let i = this.count;
+        const flip = ao0 + ao2 < ao1 + ao3;
+
+        const put = (v, ao) => {
+          p[i] = v[0]; p[i + 1] = v[1]; p[i + 2] = v[2];
+          nm[i] = nx;  nm[i + 1] = ny;  nm[i + 2] = nz;
+          cl[i] = r * ao; cl[i + 1] = g * ao; cl[i + 2] = b * ao;
+          i += 3;
+        };
+
+        if (!flip) {
+          put(v0, ao0); put(v1, ao1); put(v2, ao2);
+          put(v0, ao0); put(v2, ao2); put(v3, ao3);
+        } else {
+          put(v1, ao1); put(v2, ao2); put(v3, ao3);
+          put(v1, ao1); put(v3, ao3); put(v0, ao0);
+        }
+        this.count = i;
+      }
+
+      build() {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(this.pos.subarray(0, this.count).slice(), 3));
+        geo.setAttribute('normal', new THREE.BufferAttribute(this.norm.subarray(0, this.count).slice(), 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(this.col.subarray(0, this.count).slice(), 3));
+        geo.computeBoundingSphere();
+        return geo;
+      }
+    }
+
+    const solidBuilder = new MeshBuilder(28000);
+    const transBuilder = new MeshBuilder(8192);
+    const glowBuilder  = new MeshBuilder(2048);
+    const xrayBuilder  = new MeshBuilder(8192);
+
+    function calcAO(s1, s2, corner) {
+      if (s1 && s2) return 0.68;
+      const o = s1 + s2 + corner;
+      return o === 0 ? 1.0 : o === 1 ? 0.88 : 0.77;
+    }
+
+    function blockRGB(b, x, y, z, wx, wz, sz) {
+      const info = BLOCK_INFO[b] || BLOCK_INFO[BLOCK.STONE];
+      let r = info.rgb[0], g = info.rgb[1], bl = info.rgb[2];
+      if (b === BLOCK.GRASS) {
+        const i2 = z * sz + x;
+        const t = tempMap[i2], h = humidMap[i2];
+        r += t * 0.11 - h * 0.06;
+        g += h * 0.08 - Math.abs(t) * 0.04;
+        bl += -t * 0.08 + h * 0.03;
+      }
+      const jitter = (coordHash(wx, y, wz) - 0.5) * 0.055;
+      return [
+        Math.max(0.02, Math.min(1, r + jitter)),
+        Math.max(0.02, Math.min(1, g + jitter)),
+        Math.max(0.02, Math.min(1, bl + jitter)),
+      ];
+    }
+
+    // ========================================================================
+    // 5. THREE.JS SCENE, MESHES & CHUNK BOUNDARY WIREFRAMES
+    // ========================================================================
+
+    let scene, camera, renderer;
+    let solidMesh = null, transMesh = null, glowMesh = null, xrayMesh = null;
+    let gridLines = null, savedChunkLines = null, hoverBox = null;
+    let matSolid, matSolidGhost, matTrans, matGlow, matXray;
+
+    function initThree() {
+      if (typeof THREE === 'undefined') {
+        document.getElementById('engine-error-banner').classList.remove('hidden');
+        return false;
+      }
+
+      const container = document.getElementById('viewport-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x090d16);
+      scene.fog = new THREE.FogExp2(0x090d16, 0.005);
+
+      camera = new THREE.PerspectiveCamera(48, container.clientWidth / container.clientHeight, 0.5, 420);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.domElement.classList.add('webgl-canvas');
+      container.appendChild(renderer.domElement);
+
+      // Clean 3-point studio lighting
+      scene.add(new THREE.HemisphereLight(0xd6ecff, 0x1e293b, 0.80));
+      const sun = new THREE.DirectionalLight(0xfff4e0, 0.72);
+      sun.position.set(55, 110, 48);
+      scene.add(sun);
+      const rim = new THREE.DirectionalLight(0x60a5fa, 0.24);
+      rim.position.set(-60, 36, -55);
+      scene.add(rim);
+
+      matSolid = new THREE.MeshLambertMaterial({ vertexColors: true });
+      matSolidGhost = new THREE.MeshLambertMaterial({
+        vertexColors: true, transparent: true, opacity: 0.16, depthWrite: false
+      });
+      matTrans = new THREE.MeshLambertMaterial({
+        vertexColors: true, transparent: true, opacity: 0.64, side: THREE.DoubleSide, depthWrite: false
+      });
+      matGlow = new THREE.MeshBasicMaterial({ vertexColors: true });
+      matXray = new THREE.MeshBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.82, side: THREE.DoubleSide
+      });
+
+      hoverBox = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(1.03, 1.03, 1.03)),
+        new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.95 })
+      );
+      hoverBox.visible = false;
+      scene.add(hoverBox);
+
+      window.addEventListener('resize', () => {
+        const w = container.clientWidth, h = container.clientHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      });
+      return true;
+    }
+
+    function rebuildMeshes() {
+      const sz = worldSize();
+      const limX = Math.min(state.sliceX, sz);
+      const limZ = Math.min(state.sliceZ, sz);
+      const half = sz * 0.5;
+      const ox = worldOriginX();
+      const oz = worldOriginZ();
+
+      solidBuilder.count = 0;
+      transBuilder.count = 0;
+      glowBuilder.count = 0;
+      xrayBuilder.count = 0;
+
+      const getB = (x, y, z) => {
+        if (x < 0 || x >= limX || y < 0 || y >= WORLD_H || z < 0 || z >= limZ) return BLOCK.AIR;
+        return voxelData[vIdx(x, y, z, sz)];
+      };
+
+      const isOpaque = (x, y, z) => {
+        const b = getB(x, y, z);
+        return b !== BLOCK.AIR && b !== BLOCK.WATER && b !== BLOCK.GLASS;
+      };
+
+      for (let y = 0; y < WORLD_H; y++) {
+        for (let z = 0; z < limZ; z++) {
+          const pz = z - half;
+          const wz = oz + z;
+          for (let x = 0; x < limX; x++) {
+            const b = voxelData[vIdx(x, y, z, sz)];
+            const px = x - half;
+
+            // Air pockets -> X-Ray cave walls when active
+            if (b === BLOCK.AIR) {
+              if (state.xray && y >= 1 && y < Math.floor(heightMap[z * sz + x]) - 1) {
+                const t = y / WORLD_H;
+                const cr = 0.16 + (1 - t) * 0.45, cg = 0.72 * t + 0.22, cb = 0.98;
+                if (isOpaque(x, y + 1, z)) xrayBuilder.addQuad([px, y + 1, pz + 1], [px + 1, y + 1, pz + 1], [px + 1, y + 1, pz], [px, y + 1, pz], 0, -1, 0, cr, cg, cb, 1, 1, 1, 1);
+                if (isOpaque(x, y - 1, z)) xrayBuilder.addQuad([px, y, pz], [px + 1, y, pz], [px + 1, y, pz + 1], [px, y, pz + 1], 0, 1, 0, cr * 0.7, cg * 0.7, cb * 0.85, 1, 1, 1, 1);
+                if (isOpaque(x + 1, y, z)) xrayBuilder.addQuad([px + 1, y, pz + 1], [px + 1, y, pz], [px + 1, y + 1, pz], [px + 1, y + 1, pz + 1], -1, 0, 0, cr * 0.85, cg * 0.85, cb * 0.9, 1, 1, 1, 1);
+                if (isOpaque(x - 1, y, z)) xrayBuilder.addQuad([px, y, pz], [px, y, pz + 1], [px, y + 1, pz + 1], [px, y + 1, pz], 1, 0, 0, cr * 0.85, cg * 0.85, cb * 0.9, 1, 1, 1, 1);
+                if (isOpaque(x, y, z + 1)) xrayBuilder.addQuad([px, y, pz + 1], [px + 1, y, pz + 1], [px + 1, y + 1, pz + 1], [px, y + 1, pz + 1], 0, 0, -1, cr * 0.92, cg * 0.92, cb, 1, 1, 1, 1);
+                if (isOpaque(x, y, z - 1)) xrayBuilder.addQuad([px + 1, y, pz], [px, y, pz], [px, y + 1, pz], [px + 1, y + 1, pz], 0, 0, 1, cr * 0.92, cg * 0.92, cb, 1, 1, 1, 1);
+              }
+              continue;
+            }
+
+            // Translucent blocks (Water & Glass)
+            if (b === BLOCK.WATER || b === BLOCK.GLASS) {
+              const topY = (b === BLOCK.WATER && getB(x, y + 1, z) !== BLOCK.WATER) ? y + 0.88 : y + 1;
+              const [r, g, bl] = BLOCK_INFO[b].rgb;
+              const skipFace = (nb) => nb === b || (nb !== BLOCK.AIR && nb !== BLOCK.WATER && nb !== BLOCK.GLASS);
+
+              if (!skipFace(getB(x, y + 1, z))) transBuilder.addQuad([px, topY, pz + 1], [px + 1, topY, pz + 1], [px + 1, topY, pz], [px, topY, pz], 0, 1, 0, r, g, bl, 1, 1, 1, 1);
+              if (b === BLOCK.GLASS && !skipFace(getB(x, y - 1, z))) transBuilder.addQuad([px, y, pz], [px + 1, y, pz], [px + 1, y, pz + 1], [px, y, pz + 1], 0, -1, 0, r * 0.8, g * 0.8, bl * 0.85, 1, 1, 1, 1);
+              if (!skipFace(getB(x + 1, y, z))) transBuilder.addQuad([px + 1, y, pz + 1], [px + 1, y, pz], [px + 1, topY, pz], [px + 1, topY, pz + 1], 1, 0, 0, r * 0.85, g * 0.85, bl * 0.92, 1, 1, 1, 1);
+              if (!skipFace(getB(x - 1, y, z))) transBuilder.addQuad([px, y, pz], [px, y, pz + 1], [px, topY, pz + 1], [px, topY, pz], -1, 0, 0, r * 0.85, g * 0.85, bl * 0.92, 1, 1, 1, 1);
+              if (!skipFace(getB(x, y, z + 1))) transBuilder.addQuad([px, y, pz + 1], [px + 1, y, pz + 1], [px + 1, topY, pz + 1], [px, topY, pz + 1], 0, 0, 1, r * 0.92, g * 0.92, bl * 0.96, 1, 1, 1, 1);
+              if (!skipFace(getB(x, y, z - 1))) transBuilder.addQuad([px + 1, y, pz], [px, y, pz], [px, topY, pz], [px + 1, topY, pz], 0, 0, -1, r * 0.92, g * 0.92, bl * 0.96, 1, 1, 1, 1);
+              continue;
+            }
+
+            // Opaque or Emissive Glow blocks
+            const topAir = !isOpaque(x, y + 1, z);
+            const botAir = !isOpaque(x, y - 1, z);
+            const pxAir  = !isOpaque(x + 1, y, z);
+            const nxAir  = !isOpaque(x - 1, y, z);
+            const pzAir  = !isOpaque(x, y, z + 1);
+            const nzAir  = !isOpaque(x, y, z - 1);
+            if (!topAir && !botAir && !pxAir && !nxAir && !pzAir && !nzAir) continue;
+
+            const wx = ox + x;
+            const isLamp = b === BLOCK.LAMP;
+            const target = isLamp ? glowBuilder : solidBuilder;
+            const [r, g, bl] = blockRGB(b, x, y, z, wx, wz, sz);
+            const sR = b === BLOCK.GRASS ? 0.50 : r;
+            const sG = b === BLOCK.GRASS ? 0.36 : g;
+            const sB = b === BLOCK.GRASS ? 0.25 : bl;
+
+            const shTop = 1.0, shZ = isLamp ? 0.96 : 0.85, shX = isLamp ? 0.92 : 0.74, shBot = isLamp ? 0.88 : 0.56;
+
+            if (topAir) {
+              const a0 = isLamp ? 1 : calcAO(isOpaque(x - 1, y + 1, z), isOpaque(x, y + 1, z + 1), isOpaque(x - 1, y + 1, z + 1));
+              const a1 = isLamp ? 1 : calcAO(isOpaque(x + 1, y + 1, z), isOpaque(x, y + 1, z + 1), isOpaque(x + 1, y + 1, z + 1));
+              const a2 = isLamp ? 1 : calcAO(isOpaque(x + 1, y + 1, z), isOpaque(x, y + 1, z - 1), isOpaque(x + 1, y + 1, z - 1));
+              const a3 = isLamp ? 1 : calcAO(isOpaque(x - 1, y + 1, z), isOpaque(x, y + 1, z - 1), isOpaque(x - 1, y + 1, z - 1));
+              target.addQuad([px, y + 1, pz + 1], [px + 1, y + 1, pz + 1], [px + 1, y + 1, pz], [px, y + 1, pz], 0, 1, 0, r * shTop, g * shTop, bl * shTop, a0, a1, a2, a3);
+            }
+            if (botAir) {
+              target.addQuad([px, y, pz], [px + 1, y, pz], [px + 1, y, pz + 1], [px, y, pz + 1], 0, -1, 0, sR * shBot, sG * shBot, sB * shBot, 1, 1, 1, 1);
+            }
+            if (pxAir) {
+              const a0 = isLamp ? 1 : calcAO(isOpaque(x + 1, y - 1, z), isOpaque(x + 1, y, z + 1), isOpaque(x + 1, y - 1, z + 1));
+              const a1 = isLamp ? 1 : calcAO(isOpaque(x + 1, y - 1, z), isOpaque(x + 1, y, z - 1), isOpaque(x + 1, y - 1, z - 1));
+              const a2 = isLamp ? 1 : calcAO(isOpaque(x + 1, y + 1, z), isOpaque(x + 1, y, z - 1), isOpaque(x + 1, y + 1, z - 1));
+              const a3 = isLamp ? 1 : calcAO(isOpaque(x + 1, y + 1, z), isOpaque(x + 1, y, z + 1), isOpaque(x + 1, y + 1, z + 1));
+              target.addQuad([px + 1, y, pz + 1], [px + 1, y, pz], [px + 1, y + 1, pz], [px + 1, y + 1, pz + 1], 1, 0, 0, sR * shX, sG * shX, sB * shX, a0, a1, a2, a3);
+            }
+            if (nxAir) {
+              const a0 = isLamp ? 1 : calcAO(isOpaque(x - 1, y - 1, z), isOpaque(x - 1, y, z - 1), isOpaque(x - 1, y - 1, z - 1));
+              const a1 = isLamp ? 1 : calcAO(isOpaque(x - 1, y - 1, z), isOpaque(x - 1, y, z + 1), isOpaque(x - 1, y - 1, z + 1));
+              const a2 = isLamp ? 1 : calcAO(isOpaque(x - 1, y + 1, z), isOpaque(x - 1, y, z + 1), isOpaque(x - 1, y + 1, z + 1));
+              const a3 = isLamp ? 1 : calcAO(isOpaque(x - 1, y + 1, z), isOpaque(x - 1, y, z - 1), isOpaque(x - 1, y + 1, z - 1));
+              target.addQuad([px, y, pz], [px, y, pz + 1], [px, y + 1, pz + 1], [px, y + 1, pz], -1, 0, 0, sR * shX, sG * shX, sB * shX, a0, a1, a2, a3);
+            }
+            if (pzAir) {
+              const a0 = isLamp ? 1 : calcAO(isOpaque(x - 1, y, z + 1), isOpaque(x, y - 1, z + 1), isOpaque(x - 1, y - 1, z + 1));
+              const a1 = isLamp ? 1 : calcAO(isOpaque(x + 1, y, z + 1), isOpaque(x, y - 1, z + 1), isOpaque(x + 1, y - 1, z + 1));
+              const a2 = isLamp ? 1 : calcAO(isOpaque(x + 1, y, z + 1), isOpaque(x, y + 1, z + 1), isOpaque(x + 1, y + 1, z + 1));
+              const a3 = isLamp ? 1 : calcAO(isOpaque(x - 1, y, z + 1), isOpaque(x, y + 1, z + 1), isOpaque(x - 1, y + 1, z + 1));
+              target.addQuad([px, y, pz + 1], [px + 1, y, pz + 1], [px + 1, y + 1, pz + 1], [px, y + 1, pz + 1], 0, 0, 1, sR * shZ, sG * shZ, sB * shZ, a0, a1, a2, a3);
+            }
+            if (nzAir) {
+              const a0 = isLamp ? 1 : calcAO(isOpaque(x + 1, y, z - 1), isOpaque(x, y - 1, z - 1), isOpaque(x + 1, y - 1, z - 1));
+              const a1 = isLamp ? 1 : calcAO(isOpaque(x - 1, y, z - 1), isOpaque(x, y - 1, z - 1), isOpaque(x - 1, y - 1, z - 1));
+              const a2 = isLamp ? 1 : calcAO(isOpaque(x - 1, y, z - 1), isOpaque(x, y + 1, z - 1), isOpaque(x - 1, y + 1, z - 1));
+              const a3 = isLamp ? 1 : calcAO(isOpaque(x + 1, y, z - 1), isOpaque(x, y + 1, z - 1), isOpaque(x + 1, y + 1, z - 1));
+              target.addQuad([px + 1, y, pz], [px, y, pz], [px, y + 1, pz], [px + 1, y + 1, pz], 0, 0, -1, sR * shZ, sG * shZ, sB * shZ, a0, a1, a2, a3);
+            }
+          }
+        }
+      }
+
+      const swapMesh = (oldMesh, builder, mat, visible = true) => {
+        if (oldMesh) { oldMesh.geometry.dispose(); scene.remove(oldMesh); }
+        if (!visible || builder.count === 0) return null;
+        const m = new THREE.Mesh(builder.build(), mat);
+        scene.add(m);
+        return m;
+      };
+
+      solidMesh = swapMesh(solidMesh, solidBuilder, state.xray ? matSolidGhost : matSolid, true);
+      transMesh = swapMesh(transMesh, transBuilder, matTrans, !state.xray);
+      glowMesh  = swapMesh(glowMesh, glowBuilder, matGlow, true);
+      xrayMesh  = swapMesh(xrayMesh, xrayBuilder, matXray, state.xray);
+
+      rebuildChunkBorders();
+    }
+
+    function getModifiedChunkSet() {
+      const mod = new Map(); // "cx,cz" -> editCount
+      for (const k of Object.keys(state.edits)) {
+        const [wx, , wz] = k.split('_').map(Number);
+        const ck = `${worldToChunk(wx)},${worldToChunk(wz)}`;
+        mod.set(ck, (mod.get(ck) || 0) + 1);
+      }
+      return mod;
+    }
+
+    function rebuildChunkBorders() {
+      if (gridLines) { gridLines.geometry.dispose(); scene.remove(gridLines); gridLines = null; }
+      if (savedChunkLines) { savedChunkLines.geometry.dispose(); scene.remove(savedChunkLines); savedChunkLines = null; }
+      if (!state.showChunkGrid) return;
+
+      const n = state.chunkGridSize;
+      const sz = n * 16;
+      const half = sz * 0.5;
+      const verts = [];
+      const modVerts = [];
+
+      for (let i = 0; i <= n; i++) {
+        const p = i * 16 - half;
+        verts.push(p, 0.04, -half, p, 0.04, half);
+        verts.push(p, WORLD_H, -half, p, WORLD_H, half);
+        verts.push(-half, 0.04, p, half, 0.04, p);
+        verts.push(-half, WORLD_H, p, half, WORLD_H, p);
+        for (let j = 0; j <= n; j++) {
+          const q = j * 16 - half;
+          verts.push(p, 0, q, p, WORLD_H, q);
+        }
+      }
+
+      const modMap = getModifiedChunkSet();
+      for (let gx = 0; gx < n; gx++) {
+        for (let gz = 0; gz < n; gz++) {
+          const cx = state.chunkOriginX + gx;
+          const cz = state.chunkOriginZ + gz;
+          if (!modMap.has(`${cx},${cz}`)) continue;
+          const x0 = gx * 16 - half, x1 = x0 + 16;
+          const z0 = gz * 16 - half, z1 = z0 + 16;
+          const yT = WORLD_H + 0.14;
+          modVerts.push(x0, yT, z0, x1, yT, z0, x1, yT, z0, x1, yT, z1, x1, yT, z1, x0, yT, z1, x0, yT, z1, x0, yT, z0);
+          modVerts.push(x0, 0.1, z0, x1, 0.1, z0, x1, 0.1, z0, x1, 0.1, z1, x1, 0.1, z1, x0, 0.1, z1, x0, 0.1, z1, x0, 0.1, z0);
+          modVerts.push(x0, 0, z0, x0, yT, z0, x1, 0, z0, x1, yT, z0, x1, 0, z1, x1, yT, z1, x0, 0, z1, x0, yT, z1);
+        }
+      }
+
+      const g1 = new THREE.BufferGeometry();
+      g1.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      gridLines = new THREE.LineSegments(g1, new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.22 }));
+      scene.add(gridLines);
+
+      if (modVerts.length > 0) {
+        const g2 = new THREE.BufferGeometry();
+        g2.setAttribute('position', new THREE.Float32BufferAttribute(modVerts, 3));
+        savedChunkLines = new THREE.LineSegments(g2, new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.85 }));
+        scene.add(savedChunkLines);
+      }
+    }
+
+    // ========================================================================
+    // 6. INTERACTIVE MINI SPLINE CANVAS (MOUSE + TOUCH DRAGGABLE)
+    // ========================================================================
+
+    let activeSplineIdx = -1;
+
+    function drawSplineCanvas() {
+      const canvas = document.getElementById('spline-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // Subtle grid
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.5); ctx.lineTo(w, h * 0.5);
+      ctx.moveTo(w * 0.5, 0); ctx.lineTo(w * 0.5, h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Smooth curve
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      const padX = 16, padY = 12;
+      for (let i = 0; i <= 48; i++) {
+        const c = -1 + (2 * i) / 48;
+        const val = evaluateSpline(c);
+        const px = padX + (i / 48) * (w - padX * 2);
+        const py = h - padY - ((val + 1) * 0.5) * (h - padY * 2);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      // 4 Draggable handles
+      for (let i = 0; i < 4; i++) {
+        const px = padX + (i / 3) * (w - padX * 2);
+        const py = h - padY - ((state.splinePoints[i] + 1) * 0.5) * (h - padY * 2);
+        ctx.fillStyle = activeSplineIdx === i ? '#7dd3fc' : '#38bdf8';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(px, py, activeSplineIdx === i ? 6.5 : 5.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    function setupSplineCanvas() {
+      const canvas = document.getElementById('spline-canvas');
+      const padX = 16, padY = 12;
+
+      const getLocalPos = (clientX, clientY) => {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: ((clientX - rect.left) / rect.width) * canvas.width,
+          y: ((clientY - rect.top) / rect.height) * canvas.height
+        };
+      };
+
+      const startDrag = (clientX, clientY) => {
+        const { x, y } = getLocalPos(clientX, clientY);
+        let best = -1, bestDist = 26;
+        for (let i = 0; i < 4; i++) {
+          const px = padX + (i / 3) * (canvas.width - padX * 2);
+          const py = canvas.height - padY - ((state.splinePoints[i] + 1) * 0.5) * (canvas.height - padY * 2);
+          const d = Math.hypot(x - px, y - py);
+          if (d < bestDist) { bestDist = d; best = i; }
+        }
+        activeSplineIdx = best;
+        drawSplineCanvas();
+      };
+
+      const moveDrag = (clientX, clientY) => {
+        if (activeSplineIdx < 0) return;
+        const { y } = getLocalPos(clientX, clientY);
+        const norm = 1 - (y - padY) / (canvas.height - padY * 2);
+        state.splinePoints[activeSplineIdx] = Math.max(-1, Math.min(1, norm * 2 - 1));
+        drawSplineCanvas();
+        scheduleRebuild();
+        scheduleRoomSync();
+      };
+
+      const endDrag = () => {
+        if (activeSplineIdx >= 0) {
+          activeSplineIdx = -1;
+          drawSplineCanvas();
+        }
+      };
+
+      canvas.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY));
+      window.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
+      window.addEventListener('mouseup', endDrag);
+
+      canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) { e.preventDefault(); startDrag(e.touches[0].clientX, e.touches[0].clientY); }
+      }, { passive: false });
+      canvas.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1 && activeSplineIdx >= 0) { e.preventDefault(); moveDrag(e.touches[0].clientX, e.touches[0].clientY); }
+      }, { passive: false });
+      canvas.addEventListener('touchend', endDrag);
+    }
+
+    // ========================================================================
+    // 7. SMOOTH ORBIT / PAN / PINCH-ZOOM CAMERA & VOXEL RAYCASTING
+    // ========================================================================
+
+    const cam = {
+      target: new THREE.Vector3(0, 15, 0),
+      desiredTarget: new THREE.Vector3(0, 15, 0),
+      theta: Math.PI * 0.25,
+      desiredTheta: Math.PI * 0.25,
+      phi: Math.PI * 0.34,
+      desiredPhi: Math.PI * 0.34,
+      radius: 76,
+      desiredRadius: 76,
+      dragging: false,
+      btn: 0,
+      lastX: 0, lastY: 0, downX: 0, downY: 0, moved: 0,
+      pinchDist: 0, pinchMidX: 0, pinchMidY: 0,
+    };
+
+    function updateCamera(dt) {
+      const k = Math.min(1, dt * 11);
+      cam.theta += (cam.desiredTheta - cam.theta) * k;
+      cam.phi += (cam.desiredPhi - cam.phi) * k;
+      cam.radius += (cam.desiredRadius - cam.radius) * k;
+      cam.target.lerp(cam.desiredTarget, k);
+
+      const sinP = Math.sin(cam.phi);
+      camera.position.set(
+        cam.target.x + cam.radius * sinP * Math.sin(cam.theta),
+        cam.target.y + cam.radius * Math.cos(cam.phi),
+        cam.target.z + cam.radius * sinP * Math.cos(cam.theta)
+      );
+      camera.lookAt(cam.target);
+    }
+
+    const raycaster = new THREE.Raycaster();
+    const pointerNDC = new THREE.Vector2();
+
+    function raycastVoxel(clientX, clientY) {
+      const targets = [solidMesh, glowMesh, transMesh].filter(Boolean);
+      if (!targets.length) return null;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(pointerNDC, camera);
+      const hits = raycaster.intersectObjects(targets, false);
+      if (!hits.length) return null;
+
+      const hit = hits[0];
+      const sz = worldSize();
+      const half = sz * 0.5;
+      const n = hit.face.normal;
+
+      const lx = Math.floor(hit.point.x - n.x * 0.02 + half);
+      const ly = Math.floor(hit.point.y - n.y * 0.02);
+      const lz = Math.floor(hit.point.z - n.z * 0.02 + half);
+
+      const px = Math.floor(hit.point.x + n.x * 0.02 + half);
+      const py = Math.floor(hit.point.y + n.y * 0.02);
+      const pz = Math.floor(hit.point.z + n.z * 0.02 + half);
+
+      if (lx < 0 || lx >= sz || ly < 0 || ly >= WORLD_H || lz < 0 || lz >= sz) return null;
+      return { lx, ly, lz, px, py, pz };
+    }
+
+    function updateHoverBox(clientX, clientY) {
+      const el = document.elementFromPoint(clientX, clientY);
+      if (el !== renderer.domElement) {
+        hoverBox.visible = false;
+        return;
+      }
+      const hit = raycastVoxel(clientX, clientY);
+      if (!hit) {
+        hoverBox.visible = false;
+        return;
+      }
+      const half = worldSize() * 0.5;
+      if (state.tool === 'place') {
+        hoverBox.position.set(hit.px - half + 0.5, hit.py + 0.5, hit.pz - half + 0.5);
+        hoverBox.material.color.setHex(0x34d399);
+      } else if (state.tool === 'break') {
+        hoverBox.position.set(hit.lx - half + 0.5, hit.ly + 0.5, hit.lz - half + 0.5);
+        hoverBox.material.color.setHex(0xf43f5e);
+      } else {
+        hoverBox.position.set(hit.lx - half + 0.5, hit.ly + 0.5, hit.lz - half + 0.5);
+        hoverBox.material.color.setHex(0x38bdf8);
+      }
+      hoverBox.visible = true;
+      updateInspectorHUD(hit.lx, hit.ly, hit.lz);
+    }
+
+    function handleViewportTapOrClick(clientX, clientY) {
+      const hit = raycastVoxel(clientX, clientY);
+      if (!hit) return;
+
+      if (state.tool === 'inspect') {
+        updateInspectorHUD(hit.lx, hit.ly, hit.lz);
+        // Highlight tapped voxel briefly on touch
+        const half = worldSize() * 0.5;
+        hoverBox.position.set(hit.lx - half + 0.5, hit.ly + 0.5, hit.lz - half + 0.5);
+        hoverBox.material.color.setHex(0x38bdf8);
+        hoverBox.visible = true;
+        return;
+      }
+
+      const sz = worldSize();
+      let tx, ty, tz, newBlock;
+
+      if (state.tool === 'break') {
+        tx = hit.lx; ty = hit.ly; tz = hit.lz;
+        if (ty === 0) { showToast('Bedrock floor cannot be broken'); return; }
+        newBlock = BLOCK.AIR;
+      } else {
+        tx = hit.px; ty = hit.py; tz = hit.pz;
+        if (tx < 0 || tx >= sz || ty < 0 || ty >= WORLD_H || tz < 0 || tz >= sz) {
+          showToast('Outside active chunk viewport');
+          return;
+        }
+        newBlock = state.selectedBlock;
+      }
+
+      const wx = worldOriginX() + tx;
+      const wz = worldOriginZ() + tz;
+      const editKey = `${wx}_${ty}_${wz}`;
+
+      if (Object.keys(state.edits).length >= 1500 && !(editKey in state.edits)) {
+        showToast('Edit limit reached (1,500 custom voxels)');
+        return;
+      }
+
+      state.edits[editKey] = newBlock;
+      voxelData[vIdx(tx, ty, tz, sz)] = newBlock;
+
+      rebuildMeshes();
+      updateRegionInspectorUI();
+      updateInspectorHUD(tx, ty, tz);
+
+      // Push single-voxel delta immediately if in a live Shared Room
+      syncRoomSingleEdit(editKey, newBlock);
+    }
+
+    function setupCameraControls() {
+      const dom = renderer.domElement;
+      dom.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      dom.addEventListener('mousedown', (e) => {
+        cam.dragging = true;
+        cam.btn = e.button;
+        cam.lastX = cam.downX = e.clientX;
+        cam.lastY = cam.downY = e.clientY;
+        cam.moved = 0;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        updateHoverBox(e.clientX, e.clientY);
+        if (!cam.dragging) return;
+        const dx = e.clientX - cam.lastX;
+        const dy = e.clientY - cam.lastY;
+        cam.lastX = e.clientX; cam.lastY = e.clientY;
+        cam.moved += Math.hypot(dx, dy);
+
+        if (cam.btn === 2 || e.shiftKey) {
+          const ps = cam.radius * 0.0014;
+          const right = new THREE.Vector3(Math.cos(cam.theta), 0, -Math.sin(cam.theta));
+          cam.desiredTarget.addScaledVector(right, -dx * ps);
+          cam.desiredTarget.y = Math.max(0, Math.min(WORLD_H, cam.desiredTarget.y + dy * ps));
+        } else {
+          cam.desiredTheta -= dx * 0.0075;
+          cam.desiredPhi = Math.max(0.12, Math.min(Math.PI * 0.49, cam.desiredPhi - dy * 0.0075));
+        }
+      });
+
+      window.addEventListener('mouseup', (e) => {
+        if (cam.dragging && cam.btn === 0 && cam.moved < 6) {
+          handleViewportTapOrClick(e.clientX, e.clientY);
+        }
+        cam.dragging = false;
+      });
+
+      dom.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        cam.desiredRadius = Math.max(18, Math.min(180, cam.desiredRadius * (1 + Math.sign(e.deltaY) * 0.1)));
+      }, { passive: false });
+
+      // Touch Controls: 1-finger Orbit/Tap, 2-finger Pinch Zoom & Pan
+      dom.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          cam.dragging = true;
+          cam.lastX = cam.downX = e.touches[0].clientX;
+          cam.lastY = cam.downY = e.touches[0].clientY;
+          cam.moved = 0;
+        } else if (e.touches.length === 2) {
+          cam.dragging = false;
+          const t0 = e.touches[0], t1 = e.touches[1];
+          cam.pinchDist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+          cam.pinchMidX = (t0.clientX + t1.clientX) * 0.5;
+          cam.pinchMidY = (t0.clientY + t1.clientY) * 0.5;
+        }
+      }, { passive: true });
+
+      dom.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1 && cam.dragging) {
+          const dx = e.touches[0].clientX - cam.lastX;
+          const dy = e.touches[0].clientY - cam.lastY;
+          cam.lastX = e.touches[0].clientX; cam.lastY = e.touches[0].clientY;
+          cam.moved += Math.hypot(dx, dy);
+          cam.desiredTheta -= dx * 0.0085;
+          cam.desiredPhi = Math.max(0.12, Math.min(Math.PI * 0.49, cam.desiredPhi - dy * 0.0085));
+        } else if (e.touches.length === 2) {
+          const t0 = e.touches[0], t1 = e.touches[1];
+          const dist = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+          const midX = (t0.clientX + t1.clientX) * 0.5;
+          const midY = (t0.clientY + t1.clientY) * 0.5;
+          if (cam.pinchDist > 0) {
+            cam.desiredRadius = Math.max(18, Math.min(180, cam.desiredRadius * (cam.pinchDist / dist)));
+            const ps = cam.radius * 0.0014;
+            const right = new THREE.Vector3(Math.cos(cam.theta), 0, -Math.sin(cam.theta));
+            cam.desiredTarget.addScaledVector(right, -(midX - cam.pinchMidX) * ps);
+            cam.desiredTarget.y = Math.max(0, Math.min(WORLD_H, cam.desiredTarget.y + (midY - cam.pinchMidY) * ps));
+          }
+          cam.pinchDist = dist;
+          cam.pinchMidX = midX;
+          cam.pinchMidY = midY;
+        }
+      }, { passive: true });
+
+      dom.addEventListener('touchend', () => {
+        if (cam.dragging && cam.moved < 10) {
+          handleViewportTapOrClick(cam.downX, cam.downY);
+        }
+        cam.dragging = false;
+        cam.pinchDist = 0;
+      });
+    }
+
+    // ========================================================================
+    // 8. LIVE MATH INSPECTOR, REGION UI, SHARE URL & REBUILD SCHEDULER
+    // ========================================================================
+
+    function updateInspectorHUD(lx, ly, lz) {
+      const sz = worldSize();
+      const wx = worldOriginX() + lx;
+      const wz = worldOriginZ() + lz;
+      const cx = worldToChunk(wx);
+      const cz = worldToChunk(wz);
+      const rx = chunkToRegion(cx);
+      const rz = chunkToRegion(cz);
+
+      const blockId = voxelData[vIdx(lx, ly, lz, sz)];
+      const info = BLOCK_INFO[blockId] || BLOCK_INFO[BLOCK.AIR];
+      const col = evaluateColumn2D(wx, wz);
+      const dens = evaluateDensity3D(wx, ly, wz, col.height2D);
+      const biome = classifyBiome(col.temp, col.humid, col.height2D, state.seaLevel);
+      const isModChunk = getModifiedChunkSet().has(`${cx},${cz}`);
+
+      document.getElementById('insp-placeholder').classList.add('hidden');
+      document.getElementById('insp-details').classList.remove('hidden');
+
+      document.getElementById('insp-swatch').style.backgroundColor = info.hex;
+      document.getElementById('mob-insp-dot').style.backgroundColor = info.hex;
+      document.getElementById('insp-name').textContent = info.name;
+
+      const diskBadge = document.getElementById('insp-disk-badge');
+      if (isModChunk) {
+        diskBadge.textContent = 'Modified';
+        diskBadge.className = 'px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0';
+      } else {
+        diskBadge.textContent = '0 B';
+        diskBadge.className = 'px-1.5 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 text-sky-300 border border-slate-700 shrink-0';
+      }
+
+      document.getElementById('insp-xyz').textContent = `${wx}, ${ly}, ${wz}`;
+      document.getElementById('insp-chunk').textContent = `${cx}, ${cz}`;
+      document.getElementById('insp-region').textContent = `r.${rx}.${rz}.mca`;
+      document.getElementById('insp-biome').textContent = biome;
+      document.getElementById('insp-h2d').textContent = col.height2D.toFixed(2);
+
+      const densEl = document.getElementById('insp-density');
+      const sgn = dens >= 0 ? '+' : '';
+      densEl.textContent = `${sgn}${dens.toFixed(2)} ${dens > 0 ? 'SOLID' : 'AIR'}`;
+      densEl.className = dens > 0
+        ? 'px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold'
+        : 'px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-semibold';
+    }
+
+    function updateRegionInspectorUI() {
+      const modMap = getModifiedChunkSet();
+      const totalLoaded = state.chunkGridSize * state.chunkGridSize;
+      const modCount = modMap.size;
+      const procCount = Math.max(0, totalLoaded - modCount);
+
+      // Group modified chunks by .mca region file
+      const regions = new Map();
+      let totalKB = 0;
+      for (const [ck, editCount] of modMap.entries()) {
+        const [cx, cz] = ck.split(',').map(Number);
+        const rName = `r.${chunkToRegion(cx)}.${chunkToRegion(cz)}.mca`;
+        const kb = 2.4 + editCount * 0.04;
+        totalKB += kb;
+        const cur = regions.get(rName) || { chunks: 0, kb: 0 };
+        cur.chunks++; cur.kb += kb;
+        regions.set(rName, cur);
+      }
+
+      document.getElementById('stat-proc-chunks').textContent = `${procCount} ch`;
+      document.getElementById('stat-mod-chunks').textContent = `${modCount} ch`;
+      document.getElementById('region-disk-kb').textContent = `${totalKB.toFixed(1)} KB`;
+      document.getElementById('tab-edit-dot').classList.toggle('hidden', modCount === 0);
+      document.getElementById('btn-clear-edits').disabled = Object.keys(state.edits).length === 0;
+
+      const listEl = document.getElementById('region-files-list');
+      if (regions.size === 0) {
+        listEl.innerHTML = '<div class="italic text-slate-500">Unedited chunks cost 0 bytes. Place or break a block to save a chunk delta.</div>';
+      } else {
+        listEl.innerHTML = [...regions.entries()].map(([rName, info]) => `
+          <div class="flex justify-between items-center bg-slate-950/75 px-2 py-1 rounded border border-slate-800">
+            <span class="text-amber-300">${rName}</span>
+            <span class="text-slate-400">${info.chunks} ch · ${info.kb.toFixed(1)} KB</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    function updateFormulaReadouts() {
+      document.getElementById('read-oct-max').textContent = state.octaves - 1;
+      document.getElementById('read-amp').textContent = state.amplitude.toFixed(1);
+      document.getElementById('read-pers').textContent = state.persistence.toFixed(2);
+      document.getElementById('read-freq').textContent = state.frequency.toFixed(3);
+      document.getElementById('read-lac').textContent = state.lacunarity.toFixed(2);
+
+      const b3d = document.getElementById('read-3d-badge');
+      b3d.textContent = state.density3D ? '3D Volumetric ON' : '2D Mode';
+      b3d.className = state.density3D ? 'font-mono text-[10px] text-emerald-400 font-semibold' : 'font-mono text-[10px] text-slate-400';
+      document.getElementById('read-3d-str').textContent = (state.density3D ? state.density3DStr : 0).toFixed(1);
+      document.getElementById('read-3d-slope').textContent = state.gravitySlope.toFixed(2);
+      document.getElementById('density-sliders').style.opacity = state.density3D ? '1' : '0.45';
+      document.getElementById('chunk-origin-badge').textContent = `Chunk (${state.chunkOriginX}, ${state.chunkOriginZ})`;
+      document.getElementById('tp-cx').value = state.chunkOriginX;
+      document.getElementById('tp-cz').value = state.chunkOriginZ;
+      drawSplineCanvas();
+    }
+
+    let rebuildPending = false;
+    function scheduleRebuild() {
+      if (rebuildPending) return;
+      rebuildPending = true;
+      requestAnimationFrame(() => {
+        rebuildPending = false;
+        generateVoxelBuffer();
+        rebuildMeshes();
+        updateFormulaReadouts();
+        updateRegionInspectorUI();
+      });
+    }
+
+    function applySeed(seedStr, syncRoom = true) {
+      state.seedText = String(seedStr || '0');
+      state.seedInt = hashSeed(state.seedText);
+      state.noise = new SeededPerlin(state.seedInt);
+      document.getElementById('top-seed-input').value = state.seedText;
+      document.getElementById('seed-hash-readout').textContent = '#' + state.seedInt.toString(16).toUpperCase().padStart(8, '0');
+      scheduleRebuild();
+      if (syncRoom) scheduleRoomSync();
+    }
+
+    function exportParamsPayload() {
+      return {
+        octaves: state.octaves,
+        frequency: state.frequency,
+        lacunarity: state.lacunarity,
+        persistence: state.persistence,
+        amplitude: state.amplitude,
+        seaLevel: state.seaLevel,
+        continentalness: state.continentalness,
+        erosion: state.erosion,
+        ridge: state.ridge,
+        tempShift: state.tempShift,
+        humidShift: state.humidShift,
+        splinePoints: state.splinePoints.map((v) => Number(v.toFixed(3))),
+        density3D: state.density3D,
+        density3DStr: state.density3DStr,
+        gravitySlope: state.gravitySlope,
+        cavesEnabled: state.cavesEnabled,
+        caveThreshold: state.caveThreshold,
+        caveScale: state.caveScale,
+        xray: state.xray,
+        chunkOriginX: state.chunkOriginX,
+        chunkOriginZ: state.chunkOriginZ,
+      };
+    }
+
+    function importWorldPayload(seedText, params, edits = {}, syncRoom = true) {
+      if (params) {
+        const assignNum = (k, def) => { if (typeof params[k] === 'number' && !Number.isNaN(params[k])) state[k] = params[k]; else if (def !== undefined) state[k] = def; };
+        assignNum('octaves'); assignNum('frequency'); assignNum('lacunarity');
+        assignNum('persistence'); assignNum('amplitude'); assignNum('seaLevel');
+        assignNum('continentalness'); assignNum('erosion'); assignNum('ridge');
+        assignNum('tempShift', 0); assignNum('humidShift', 0);
+        assignNum('density3DStr'); assignNum('gravitySlope');
+        assignNum('caveThreshold'); assignNum('caveScale');
+        assignNum('chunkOriginX', 0); assignNum('chunkOriginZ', 0);
+
+        if (typeof params.density3D === 'boolean') state.density3D = params.density3D;
+        if (typeof params.cavesEnabled === 'boolean') state.cavesEnabled = params.cavesEnabled;
+        if (typeof params.xray === 'boolean') state.xray = params.xray;
+        if (Array.isArray(params.splinePoints) && params.splinePoints.length === 4) {
+          state.splinePoints = params.splinePoints.map((v) => Math.max(-1, Math.min(1, Number(v) || 0)));
+        }
+        const sz = worldSize();
+        state.sliceX = typeof params.sliceFractionX === 'number' ? Math.max(4, Math.floor(sz * params.sliceFractionX)) : sz;
+        state.sliceZ = sz;
+      }
+
+      state.edits = edits ? { ...edits } : {};
+      syncSlidersFromState();
+      applySeed(seedText || state.seedText, syncRoom);
+    }
+
+    function copyTextSafe(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    function encodeShareURL() {
+      const payload = { s: state.seedText, p: exportParamsPayload() };
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+      try {
+        history.replaceState(null, '', '#cl=' + encoded);
+      } catch (_) {
+        // Ignore history restriction inside sandboxed frames
+      }
+      const base = window.location.href.split('#')[0];
+      return `${base}#cl=${encoded}`;
+    }
+
+    function tryLoadFromURLHash() {
+      try {
+        const hash = window.location.hash || '';
+        if (!hash.startsWith('#cl=')) return false;
+        const raw = hash.slice(4);
+        const decoded = JSON.parse(decodeURIComponent(escape(atob(raw))));
+        if (decoded && decoded.s) {
+          importWorldPayload(decoded.s, decoded.p || {}, {}, false);
+          showToast(`Loaded shared world: "${decoded.s}"`);
+          return true;
+        }
+      } catch (err) {
+        console.warn('Could not parse shared URL hash:', err);
+      }
+      return false;
+    }
+
+    // ========================================================================
+    // 9. FIREBASE IDENTITY, COMMUNITY HUB & LIVE SHARED ROOMS
+    // ========================================================================
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'chunklab-3d-web';
+    const rawFirebaseConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    let db = null;
+    let auth = null;
+    let currentUser = null;
+    let cloudOnline = false;
+
+    // Lightweight identity (stored in memory + Firestore private profile; never localStorage)
+    let userNickname = `Voxel-${Math.floor(100 + Math.random() * 899)}`;
+    let liveHubItems = [];
+    let sessionLocalHubItems = [];
+    let activeHubFilter = 'all';
+    const upvotedIds = new Set();
+
+    // Collaborative Room state
+    let activeRoomCode = null;
+    let unsubscribeRoom = null;
+    let roomHeartbeatTimer = null;
+    let roomSyncDebounce = null;
+    let applyingRemoteRoomUpdate = false;
+
+    function setCloudStatusUI(status, text) {
+      const dot = document.getElementById('cloud-dot');
+      const statusEl = document.getElementById('profile-cloud-status');
+      const hubTag = document.getElementById('hub-sync-tag');
+      const offlineWarn = document.getElementById('room-offline-warn');
+
+      if (status === 'online') {
+        cloudOnline = true;
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        statusEl.textContent = text || 'Connected (Cloud Live)';
+        statusEl.className = 'font-mono text-emerald-400';
+        hubTag.textContent = 'Live Cloud';
+        hubTag.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        offlineWarn.classList.add('hidden');
+      } else {
+        cloudOnline = false;
+        dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+        statusEl.textContent = text || 'Local Offline Mode';
+        statusEl.className = 'font-mono text-amber-300';
+        hubTag.textContent = 'Local Mode';
+        hubTag.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        offlineWarn.classList.remove('hidden');
+      }
+    }
+
+    function updateNicknameUI() {
+      document.getElementById('top-nickname').textContent = userNickname;
+      document.getElementById('inp-nickname').value = userNickname;
+      document.getElementById('pub-creator').textContent = userNickname;
+    }
+
+    async function initFirebaseCloud() {
+      updateNicknameUI();
+      if (!rawFirebaseConfig) {
+        document.getElementById('profile-user-id').textContent = 'local-' + Math.random().toString(36).slice(2, 10);
+        setCloudStatusUI('offline', 'Local Mode (No Cloud Config)');
+        renderHubGallery();
+        return;
+      }
+
+      try {
+        const config = typeof rawFirebaseConfig === 'string' ? JSON.parse(rawFirebaseConfig) : rawFirebaseConfig;
+        const app = initializeApp(config);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        // RULE 3: Auth BEFORE any Firestore query!
+        if (initialAuthToken) {
+          await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+          await signInAnonymously(auth);
+        }
+
+        currentUser = auth.currentUser;
+        if (!currentUser) throw new Error('Anonymous sign-in returned no user');
+
+        // Display complete userId for multi-user discoverability
+        document.getElementById('profile-user-id').textContent = currentUser.uid;
+        setCloudStatusUI('online', 'Connected (Live Sync)');
+
+        // Load saved nickname from private Firestore user profile (RULE 1 path)
+        try {
+          const profRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'user_profile');
+          const snap = await getDoc(profRef);
+          if (snap.exists() && snap.data().nickname) {
+            userNickname = snap.data().nickname;
+            updateNicknameUI();
+          }
+        } catch (e) {
+          console.warn('Profile fetch skipped:', e.message);
+        }
+
+        // Subscribe to Community Seed Hub (RULE 1 public path, RULE 2 simple collection query)
+        const hubRef = collection(db, 'artifacts', appId, 'public', 'data', 'chunklab_hub');
+        onSnapshot(
+          hubRef,
+          (snapshot) => {
+            liveHubItems = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+            renderHubGallery();
+          },
+          (err) => {
+            console.error('Hub listener error:', err);
+            setCloudStatusUI('offline', 'Sync Interrupted (Local Mode)');
+            renderHubGallery();
+          }
+        );
+      } catch (err) {
+        console.warn('Cloud init fallback to offline mode:', err);
+        document.getElementById('profile-user-id').textContent = 'offline-guest-' + Math.random().toString(36).slice(2, 8);
+        setCloudStatusUI('offline', 'Offline / Local Mode');
+        renderHubGallery();
+      }
+    }
+
+    async function saveNickname(newName) {
+      const cleaned = newName.trim().slice(0, 20);
+      if (!cleaned) return;
+      userNickname = cleaned;
+      updateNicknameUI();
+
+      if (db && currentUser) {
+        try {
+          const profRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'profile', 'user_profile');
+          await setDoc(profRef, { nickname: userNickname, updatedAt: Date.now() }, { merge: true });
+          if (activeRoomCode) {
+            await updateRoomPresence();
+          }
+        } catch (err) {
+          console.warn('Failed to persist nickname:', err);
+        }
+      }
+      showToast(`Nickname set to ${userNickname}`);
+    }
+
+    // ---- COMMUNITY HUB RENDER, PUBLISH & UPVOTE ----
+
+    function computeWorldBadges() {
+      const b = [];
+      if (state.density3D) b.push('3D Density');
+      if (state.cavesEnabled) b.push('Caves');
+      if (state.ridge >= 11) b.push('Ridged Peaks');
+      if (state.seaLevel >= 19) b.push('Oceanic');
+      const editCnt = Object.keys(state.edits).length;
+      if (editCnt > 0) b.push(`${editCnt} Edits`);
+      return b.length ? b.slice(0, 3) : ['Procedural'];
+    }
+
+    function renderHubGallery() {
+      const grid = document.getElementById('hub-gallery-grid');
+      let items = [...liveHubItems, ...sessionLocalHubItems, ...FEATURED_CREATIONS];
+
+      if (activeHubFilter === 'featured') {
+        items = items.filter((it) => it.featured);
+      } else if (activeHubFilter === 'trending') {
+        items.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
+      } else {
+        // Default "All": newest community creations first, then featured presets
+        items.sort((a, b) => {
+          if (Boolean(a.featured) !== Boolean(b.featured)) return a.featured ? 1 : -1;
+          return (b.createdAt || 0) - (a.createdAt || 0);
+        });
+      }
+
+      document.getElementById('hub-count-badge').textContent = items.length;
+
+      grid.innerHTML = items.map((item) => {
+        const badgesHtml = (item.badges || ['Procedural']).map((tag) =>
+          `<span class="px-1.5 py-0.5 rounded bg-slate-800/90 border border-slate-700/70 text-[10px] text-slate-300">${escapeHTML(tag)}</span>`
+        ).join('');
+        const voted = upvotedIds.has(item.id);
+        const featPill = item.featured
+          ? '<span class="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">Featured</span>'
+          : '';
+
+        return `
+          <div class="bg-slate-900/75 border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 flex flex-col justify-between gap-3 transition">
+            <div class="space-y-2">
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <h3 class="text-xs font-bold text-white leading-snug">${escapeHTML(item.title || 'Untitled Chunk')}</h3>
+                  <div class="text-[11px] text-slate-400 mt-0.5">by <span class="text-sky-300 font-medium">${escapeHTML(item.creator || 'Anonymous')}</span></div>
+                </div>
+                ${featPill}
+              </div>
+
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 font-mono text-[10px] text-emerald-300">seed: ${escapeHTML(item.seedText || '0')}</span>
+                ${badgesHtml}
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-2 border-t border-slate-800/80">
+              <button data-upvote="${escapeHTML(item.id)}" class="hub-upvote-btn px-2.5 py-1 rounded-lg ${voted ? 'bg-sky-500/25 text-sky-300 border-sky-500/40' : 'bg-slate-800/80 text-slate-300 hover:text-white border-slate-700/70'} border text-xs font-mono flex items-center gap-1 transition active:scale-95">
+                <svg class="w-3.5 h-3.5" fill="${voted ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+                <span>${item.upvotes || 0}</span>
+              </button>
+              <button data-load-hub="${escapeHTML(item.id)}" class="hub-load-btn px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold transition active:scale-95">
+                Load Chunk
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Attach listeners
+      grid.querySelectorAll('.hub-load-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const item = items.find((x) => x.id === btn.dataset.loadHub);
+          if (!item) return;
+          const parsedEdits = typeof item.editsJson === 'string' ? safeParseJSON(item.editsJson, {}) : (item.edits || {});
+          importWorldPayload(item.seedText, item.params || {}, parsedEdits, true);
+          closeModal('modal-hub');
+          showToast(`Loaded "${item.title}"`);
+        });
+      });
+
+      grid.querySelectorAll('.hub-upvote-btn').forEach((btn) => {
+        btn.addEventListener('click', () => upvoteHubItem(btn.dataset.upvote, items));
+      });
+    }
+
+    async function publishCurrentCreation() {
+      const titleInput = document.getElementById('pub-title');
+      const title = titleInput.value.trim() || `Chunk ${state.seedText}`;
+
+      const docData = {
+        title,
+        creator: userNickname,
+        creatorId: currentUser ? currentUser.uid : 'local',
+        seedText: state.seedText,
+        params: exportParamsPayload(),
+        editsJson: JSON.stringify(state.edits),
+        badges: computeWorldBadges(),
+        upvotes: 1,
+        createdAt: Date.now(),
+      };
+
+      if (db && currentUser) {
+        try {
+          const hubRef = collection(db, 'artifacts', appId, 'public', 'data', 'chunklab_hub');
+          await addDoc(hubRef, docData);
+          titleInput.value = '';
+          closeModal('modal-publish');
+          showToast(`Published "${title}" to Community Hub!`);
+          openModal('modal-hub');
+          return;
+        } catch (err) {
+          console.error('Publish failed:', err);
+        }
+      }
+
+      // Graceful local fallback
+      sessionLocalHubItems.unshift({ id: 'local-' + Date.now(), ...docData });
+      titleInput.value = '';
+      closeModal('modal-publish');
+      renderHubGallery();
+      showToast(`Published "${title}" (Local Session Hub)`);
+      openModal('modal-hub');
+    }
+
+    async function upvoteHubItem(itemId, allItems) {
+      if (upvotedIds.has(itemId)) return;
+      upvotedIds.add(itemId);
+
+      const item = allItems.find((x) => x.id === itemId);
+      if (!item) return;
+
+      if (item.featured || item.id.startsWith('local-')) {
+        item.upvotes = (item.upvotes || 0) + 1;
+        renderHubGallery();
+        return;
+      }
+
+      if (db && currentUser) {
+        try {
+          const ref = doc(db, 'artifacts', appId, 'public', 'data', 'chunklab_hub', itemId);
+          await updateDoc(ref, { upvotes: increment(1) });
+        } catch (err) {
+          console.warn('Upvote error:', err);
+        }
+      }
+    }
+
+    // ---- LIVE COLLABORATIVE ROOMS ----
+
+    function generateRoomCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 5; i++) code += chars[(Math.random() * chars.length) | 0];
+      return code;
+    }
+
+    async function createSharedRoom() {
+      if (!db || !currentUser) {
+        showToast('Online connection required for Shared Rooms');
+        return;
+      }
+      const code = generateRoomCode();
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'chunklab_rooms', code);
+
+      try {
+        await setDoc(roomRef, {
+          roomCode: code,
+          seedText: state.seedText,
+          params: exportParamsPayload(),
+          edits: { ...state.edits },
+          members: {
+            [currentUser.uid]: { name: userNickname, seenAt: Date.now() }
+          },
+          updatedBy: currentUser.uid,
+          updatedAt: Date.now(),
+        });
+        connectToRoom(code);
+        showToast(`Created live room ${code}`);
+      } catch (err) {
+        console.error('Create room error:', err);
+        showToast('Could not create room');
+      }
+    }
+
+    async function joinSharedRoom(rawCode) {
+      if (!db || !currentUser) {
+        showToast('Online connection required for Shared Rooms');
+        return;
+      }
+      const code = rawCode.trim().toUpperCase();
+      if (code.length < 4) {
+        showToast('Enter a valid room code');
+        return;
+      }
+
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'chunklab_rooms', code);
+      try {
+        const snap = await getDoc(roomRef);
+        if (!snap.exists()) {
+          showToast(`Room "${code}" not found`);
+          return;
+        }
+        await updateDoc(roomRef, {
+          [`members.${currentUser.uid}`]: { name: userNickname, seenAt: Date.now() }
+        });
+        connectToRoom(code);
+        showToast(`Joined live room ${code}`);
+      } catch (err) {
+        console.error('Join room error:', err);
+        showToast('Could not join room');
+      }
+    }
+
+    function connectToRoom(code) {
+      leaveSharedRoom(false);
+      activeRoomCode = code;
+
+      document.getElementById('room-lobby-view').classList.add('hidden');
+      document.getElementById('room-active-view').classList.remove('hidden');
+      document.getElementById('active-room-code').textContent = code;
+      document.getElementById('room-status-dot').className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+      document.getElementById('room-btn-label').textContent = code;
+
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'chunklab_rooms', code);
+      unsubscribeRoom = onSnapshot(
+        roomRef,
+        (snap) => {
+          if (!snap.exists()) return;
+          const data = snap.data();
+
+          // Render active members (seen within last 90s)
+          const now = Date.now();
+          const membersObj = data.members || {};
+          const activeMembers = Object.entries(membersObj).filter(([, m]) => now - (m.seenAt || 0) < 90000);
+          document.getElementById('room-member-count').textContent = `${activeMembers.length} online`;
+          document.getElementById('room-btn-label').textContent = `${code} (${activeMembers.length})`;
+          document.getElementById('room-members-list').innerHTML = activeMembers.map(([uid, m]) => `
+            <div class="flex items-center justify-between px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800/80">
+              <div class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span class="text-slate-100 font-medium">${escapeHTML(m.name || 'Builder')}</span>
+              </div>
+              <span class="font-mono text-[10px] text-slate-500">${uid === currentUser?.uid ? 'You' : 'Live'}</span>
+            </div>
+          `).join('');
+
+          // Apply remote world updates if changed by someone else (or on initial join)
+          if (data.updatedBy !== currentUser?.uid || !applyingRemoteRoomUpdate) {
+            applyingRemoteRoomUpdate = true;
+            importWorldPayload(data.seedText, data.params, data.edits || {}, false);
+          }
+        },
+        (err) => {
+          console.error('Room listener error:', err);
+          showToast('Room connection lost');
+        }
+      );
+
+      // Heartbeat presence every 25s
+      roomHeartbeatTimer = setInterval(updateRoomPresence, 25000);
+    }
+
+    async function updateRoomPresence() {
+      if (!db || !currentUser || !activeRoomCode) return;
+      try {
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'chunklab_rooms', activeRoomCode);
+        await updateDoc(roomRef, {
+          [`members.${currentUser.uid}`]: { name: userNickname, seenAt: Date.now() }
+        });
+      } catch (_) {}
+    }
+
+    function scheduleRoomSync() {
+      if (!db || !currentUser || !activeRoomCode) return;
+      clearTimeout(roomSyncDebounce);
+      roomSyncDebounce = setTimeout(async () => {
+        if (!db || !currentUser || !activeRoomCode) return;
+        try {
+          const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'chunklab_rooms', activeRoomCode);
+          await updateDoc(roomRef, {
+            seedText: state.seedText,
+            params: exportParamsPayload(),
+            updatedBy: currentUser.uid,
+            updatedAt: Date.now(),
+          });
+        } catch (err) {
+          console.warn('Room sync error:', err);
+        }
+      }, 170);
+    }
+
+    async function syncRoomSingleEdit(editKey, blockId) {
+      if (!db || !currentUser || !activeRoomCode) return;
+      try {
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'chunklab_rooms', activeRoomCode);
+        await updateDoc(roomRef, {
+          [`edits.${editKey}`]: blockId,
+          updatedBy: currentUser.uid,
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        console.warn('Room voxel sync error:', err);
+      }
+    }
+
+    async function syncRoomClearEdits() {
+      if (!db || !currentUser || !activeRoomCode) return;
+      try {
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'chunklab_rooms', activeRoomCode);
+        await updateDoc(roomRef, {
+          edits: {},
+          updatedBy: currentUser.uid,
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        console.warn('Room clear edits error:', err);
+      }
+    }
+
+    function leaveSharedRoom(notify = true) {
+      if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
+      if (roomHeartbeatTimer) { clearInterval(roomHeartbeatTimer); roomHeartbeatTimer = null; }
+      const prev = activeRoomCode;
+      activeRoomCode = null;
+      applyingRemoteRoomUpdate = false;
+
+      document.getElementById('room-lobby-view').classList.remove('hidden');
+      document.getElementById('room-active-view').classList.add('hidden');
+      document.getElementById('room-status-dot').className = 'w-2 h-2 rounded-full bg-slate-500';
+      document.getElementById('room-btn-label').textContent = 'Rooms';
+
+      if (notify && prev) showToast(`Left room ${prev}`);
+    }
+
+    // ========================================================================
+    // 10. UI HELPERS, MODALS, PALETTE & RANDOMIZE-ALL CHAOS ENGINE
+    // ========================================================================
+
+    function escapeHTML(str) {
+      return String(str).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    function safeParseJSON(str, fallback) {
+      try { return JSON.parse(str); } catch (_) { return fallback; }
+    }
+
+    let toastTimer = null;
+    function showToast(msg) {
+      const root = document.getElementById('toast-root');
+      root.innerHTML = `<div class="toast-pop glass px-4 py-2 rounded-xl text-xs font-medium text-slate-100 border-sky-500/40 whitespace-nowrap">${escapeHTML(msg)}</div>`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { root.innerHTML = ''; }, 2500);
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function setActiveTool(tool) {
+      state.tool = tool;
+      const styleTool = (btns) => {
+        btns.forEach((b) => {
+          const active = b.dataset.tool === tool;
+          if (active) {
+            const cls = tool === 'break'
+              ? 'bg-rose-500/25 text-rose-300 border-rose-500/40'
+              : tool === 'place'
+                ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500/40'
+                : 'bg-sky-500/20 text-sky-300 border-sky-500/40';
+            b.className = b.className.replace(/bg-\S+|text-\S+|border-\S+/g, '').trim() + ' ' + cls;
+          } else {
+            b.className = b.className.replace(/bg-\S+|text-\S+|border-\S+/g, '').trim() + ' bg-slate-900/60 text-slate-400 border-transparent hover:text-white';
+          }
+        });
+      };
+      styleTool(document.querySelectorAll('.drawer-tool-btn'));
+      styleTool(document.querySelectorAll('.quick-tool-btn'));
+    }
+
+    function renderPalette() {
+      const grid = document.getElementById('block-palette-grid');
+      grid.innerHTML = PALETTE_BLOCKS.map((id) => {
+        const info = BLOCK_INFO[id];
+        const sel = state.selectedBlock === id;
+        return `
+          <button data-pal="${id}" class="pal-btn p-1.5 rounded-xl border ${sel ? 'border-emerald-400 bg-emerald-500/15' : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'} flex flex-col items-center gap-1 transition active:scale-95">
+            <span class="w-5 h-5 rounded-md border border-white/25 shadow-inner" style="background:${info.hex}"></span>
+            <span class="text-[10px] text-slate-300 leading-none truncate w-full text-center">${info.name.split(' ')[0]}</span>
+          </button>
+        `;
+      }).join('');
+
+      const activeInfo = BLOCK_INFO[state.selectedBlock];
+      document.getElementById('active-palette-name').textContent = activeInfo.name;
+      document.getElementById('quick-block-dot').style.backgroundColor = activeInfo.hex;
+
+      grid.querySelectorAll('.pal-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.selectedBlock = parseInt(btn.dataset.pal, 10);
+          setActiveTool('place');
+          renderPalette();
+        });
+      });
+    }
+
+    function syncSlidersFromState() {
+      const setS = (id, v, valId, fmt) => {
+        const el = document.getElementById(id);
+        if (el) el.value = v;
+        if (valId) document.getElementById(valId).textContent = fmt ? fmt(v) : v;
+      };
+
+      setS('sl-octaves', state.octaves, 'val-octaves');
+      setS('sl-frequency', state.frequency, 'val-frequency', (v) => Number(v).toFixed(3));
+      setS('sl-lacunarity', state.lacunarity, 'val-lacunarity', (v) => Number(v).toFixed(2));
+      setS('sl-persistence', state.persistence, 'val-persistence', (v) => Number(v).toFixed(2));
+      setS('sl-amplitude', state.amplitude, 'val-amplitude', (v) => Number(v).toFixed(1));
+      setS('sl-seaLevel', state.seaLevel, 'val-seaLevel');
+
+      setS('sl-continentalness', state.continentalness, 'val-continentalness', (v) => Number(v).toFixed(1));
+      setS('sl-erosion', state.erosion, 'val-erosion', (v) => Number(v).toFixed(2));
+      setS('sl-ridge', state.ridge, 'val-ridge', (v) => Number(v).toFixed(1));
+      setS('sl-tempShift', state.tempShift, 'val-tempShift', (v) => (v >= 0 ? '+' : '') + Number(v).toFixed(2));
+      setS('sl-humidShift', state.humidShift, 'val-humidShift', (v) => (v >= 0 ? '+' : '') + Number(v).toFixed(2));
+
+      document.getElementById('chk-density3D').checked = state.density3D;
+      setS('sl-density3DStr', state.density3DStr, 'val-density3DStr', (v) => Number(v).toFixed(1));
+      setS('sl-gravitySlope', state.gravitySlope, 'val-gravitySlope', (v) => Number(v).toFixed(2));
+      document.getElementById('chk-caves').checked = state.cavesEnabled;
+      setS('sl-caveThreshold', state.caveThreshold, 'val-caveThreshold', (v) => Number(v).toFixed(2));
+      setS('sl-caveScale', state.caveScale, 'val-caveScale', (v) => Number(v).toFixed(3));
+      document.getElementById('chk-xray').checked = state.xray;
+
+      const sz = worldSize();
+      const sxEl = document.getElementById('sl-sliceX');
+      const szEl = document.getElementById('sl-sliceZ');
+      sxEl.max = sz; szEl.max = sz;
+      sxEl.value = state.sliceX; szEl.value = state.sliceZ;
+      document.getElementById('val-sliceX').textContent = `${state.sliceX} / ${sz}`;
+      document.getElementById('val-sliceZ').textContent = `${state.sliceZ} / ${sz}`;
+    }
+
+    function randomizeSeedWord() {
+      const adj = ['prism', 'basalt', 'nebula', 'glacier', 'canyon', 'quartz', 'cobalt', 'verdigris', 'zenith', 'aurora', 'amber', 'spire'];
+      return `${adj[(Math.random() * adj.length) | 0]}-${Math.floor(100 + Math.random() * 8999)}`;
+    }
+
+    function randomizeAllValues() {
+      const rand = (min, max) => min + Math.random() * (max - min);
+      const enable3D = Math.random() > 0.45;
+      const sz = worldSize();
+
+      state.octaves = Math.floor(rand(2, 6.9));
+      state.frequency = Number(rand(0.014, 0.055).toFixed(3));
+      state.lacunarity = Number(rand(1.75, 2.65).toFixed(2));
+      state.persistence = Number(rand(0.32, 0.68).toFixed(2));
+      state.amplitude = Number(rand(6, 20).toFixed(1));
+      state.seaLevel = Math.floor(rand(6, 22));
+
+      state.continentalness = Number(rand(3, 19).toFixed(1));
+      state.erosion = Number(rand(0.1, 0.75).toFixed(2));
+      state.ridge = Number(rand(1, 18).toFixed(1));
+      state.tempShift = Number(rand(-0.55, 0.55).toFixed(2));
+      state.humidShift = Number(rand(-0.55, 0.55).toFixed(2));
+      state.splinePoints = [
+        Number(rand(-0.95, -0.25).toFixed(2)),
+        Number(rand(-0.45, 0.25).toFixed(2)),
+        Number(rand(-0.10, 0.55).toFixed(2)),
+        Number(rand(0.45, 1.00).toFixed(2)),
+      ];
+
+      state.density3D = enable3D;
+      state.density3DStr = Number(rand(10, 26).toFixed(1));
+      state.gravitySlope = Number((enable3D ? rand(0.35, 1.05) : rand(0.75, 1.3)).toFixed(2));
+      state.cavesEnabled = Math.random() > 0.25;
+      state.caveThreshold = Number(rand(0.46, 0.64).toFixed(2));
+      state.caveScale = Number(rand(0.050, 0.088).toFixed(3));
+      state.sliceX = sz;
+      state.sliceZ = sz;
+
+      syncSlidersFromState();
+      applySeed(randomizeSeedWord(), true);
+      showToast('Randomized seed & all terrain formulas!');
+    }
+
+    function bindAllUI() {
+      // Formula Drawer Collapse
+      const drawer = document.getElementById('formula-drawer');
+      document.getElementById('btn-toggle-drawer').addEventListener('click', () => drawer.classList.toggle('collapsed'));
+      if (window.innerWidth < 768) drawer.classList.add('collapsed');
+
+      // Mobile Inspector Toggle
+      document.getElementById('btn-toggle-inspector').addEventListener('click', () => {
+        document.getElementById('inspector-card').classList.toggle('hidden');
+      });
+
+      // Drawer Tabs
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const target = btn.dataset.tab;
+          document.querySelectorAll('.tab-btn').forEach((b) => {
+            const on = b.dataset.tab === target;
+            b.className = on
+              ? 'tab-btn py-1.5 px-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 transition text-center relative'
+              : 'tab-btn py-1.5 px-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent transition text-center relative';
+          });
+          document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('hidden', p.id !== target));
+        });
+      });
+
+      // Top Bar Actions
+      document.getElementById('top-seed-input').addEventListener('input', (e) => applySeed(e.target.value, true));
+      document.getElementById('btn-random-seed').addEventListener('click', () => applySeed(randomizeSeedWord(), true));
+      document.getElementById('btn-randomize-all').addEventListener('click', randomizeAllValues);
+
+      document.getElementById('btn-copy-url').addEventListener('click', () => {
+        const url = encodeShareURL();
+        copyTextSafe(url);
+        showToast('Shareable world URL copied!');
+      });
+
+      // Modals Open & Close
+      document.getElementById('btn-open-hub').addEventListener('click', () => { renderHubGallery(); openModal('modal-hub'); });
+      document.getElementById('btn-open-room').addEventListener('click', () => openModal('modal-room'));
+      document.getElementById('btn-open-profile').addEventListener('click', () => openModal('modal-profile'));
+
+      const openPublishModal = () => {
+        document.getElementById('pub-creator').textContent = userNickname;
+        document.getElementById('pub-seed').textContent = state.seedText;
+        document.getElementById('pub-edits').textContent = `${Object.keys(state.edits).length} blocks`;
+        openModal('modal-publish');
+      };
+      document.getElementById('btn-open-publish').addEventListener('click', openPublishModal);
+      document.getElementById('btn-hub-publish-cta').addEventListener('click', () => { closeModal('modal-hub'); openPublishModal(); });
+      document.getElementById('btn-confirm-publish').addEventListener('click', publishCurrentCreation);
+
+      document.querySelectorAll('[data-close]').forEach((btn) => {
+        btn.addEventListener('click', () => closeModal(btn.dataset.close));
+      });
+
+      // Hub filters
+      document.querySelectorAll('.hub-filter-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeHubFilter = btn.dataset.hubFilter;
+          document.querySelectorAll('.hub-filter-btn').forEach((b) => {
+            const on = b.dataset.hubFilter === activeHubFilter;
+            b.className = on
+              ? 'hub-filter-btn px-3 py-1 rounded-lg bg-sky-500/20 text-sky-300 transition'
+              : 'hub-filter-btn px-3 py-1 rounded-lg text-slate-400 hover:text-white transition';
+          });
+          renderHubGallery();
+        });
+      });
+
+      // Room & Profile buttons
+      document.getElementById('btn-create-room').addEventListener('click', createSharedRoom);
+      document.getElementById('btn-join-room').addEventListener('click', () => joinSharedRoom(document.getElementById('inp-room-code').value));
+      document.getElementById('btn-leave-room').addEventListener('click', () => leaveSharedRoom(true));
+      document.getElementById('btn-copy-room-code').addEventListener('click', () => {
+        if (activeRoomCode) { copyTextSafe(activeRoomCode); showToast(`Room code ${activeRoomCode} copied!`); }
+      });
+      document.getElementById('btn-save-nickname').addEventListener('click', () => {
+        saveNickname(document.getElementById('inp-nickname').value);
+        closeModal('modal-profile');
+      });
+
+      // Tool buttons (both drawer and quick bar)
+      document.querySelectorAll('.drawer-tool-btn, .quick-tool-btn').forEach((btn) => {
+        btn.addEventListener('click', () => setActiveTool(btn.dataset.tool));
+      });
+
+      // Grid size (2x2 or 3x3 chunks)
+      document.querySelectorAll('.grid-size-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const g = parseInt(btn.dataset.grid, 10);
+          if (g === state.chunkGridSize) return;
+          state.chunkGridSize = g;
+          const sz = worldSize();
+          state.sliceX = sz; state.sliceZ = sz;
+          cam.desiredRadius = g === 2 ? 54 : 76;
+          document.querySelectorAll('.grid-size-btn').forEach((b) => {
+            const on = parseInt(b.dataset.grid, 10) === g;
+            b.className = on
+              ? 'grid-size-btn px-2 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 font-semibold transition'
+              : 'grid-size-btn px-2 py-1.5 rounded-lg text-slate-400 hover:text-white transition';
+          });
+          syncSlidersFromState();
+          scheduleRebuild();
+        });
+      });
+
+      // Chunk Grid Border Toggle
+      const gridBtn = document.getElementById('btn-grid-lines');
+      gridBtn.addEventListener('click', () => {
+        state.showChunkGrid = !state.showChunkGrid;
+        gridBtn.className = state.showChunkGrid
+          ? 'px-2 py-1.5 rounded-lg bg-sky-500/15 text-sky-300 hover:bg-sky-500/25 transition'
+          : 'px-2 py-1.5 rounded-lg text-slate-400 hover:text-white transition';
+        rebuildChunkBorders();
+      });
+
+      // Slider Binding Helper
+      const bindSl = (id, key, valId, fmt, full = true) => {
+        document.getElementById(id).addEventListener('input', (e) => {
+          const v = parseFloat(e.target.value);
+          state[key] = v;
+          document.getElementById(valId).textContent = fmt ? fmt(v) : v;
+          if (full) {
+            scheduleRebuild();
+            scheduleRoomSync();
+          } else {
+            rebuildMeshes();
+          }
+        });
+      };
+
+      bindSl('sl-octaves', 'octaves', 'val-octaves', (v) => v | 0);
+      bindSl('sl-frequency', 'frequency', 'val-frequency', (v) => v.toFixed(3));
+      bindSl('sl-lacunarity', 'lacunarity', 'val-lacunarity', (v) => v.toFixed(2));
+      bindSl('sl-persistence', 'persistence', 'val-persistence', (v) => v.toFixed(2));
+      bindSl('sl-amplitude', 'amplitude', 'val-amplitude', (v) => v.toFixed(1));
+      bindSl('sl-seaLevel', 'seaLevel', 'val-seaLevel', (v) => v | 0);
+
+      bindSl('sl-continentalness', 'continentalness', 'val-continentalness', (v) => v.toFixed(1));
+      bindSl('sl-erosion', 'erosion', 'val-erosion', (v) => v.toFixed(2));
+      bindSl('sl-ridge', 'ridge', 'val-ridge', (v) => v.toFixed(1));
+      bindSl('sl-tempShift', 'tempShift', 'val-tempShift', (v) => (v >= 0 ? '+' : '') + v.toFixed(2));
+      bindSl('sl-humidShift', 'humidShift', 'val-humidShift', (v) => (v >= 0 ? '+' : '') + v.toFixed(2));
+
+      document.getElementById('btn-reset-spline').addEventListener('click', () => {
+        state.splinePoints = [...DEFAULT_SPLINE];
+        drawSplineCanvas();
+        scheduleRebuild();
+        scheduleRoomSync();
+      });
+
+      document.getElementById('chk-density3D').addEventListener('change', (e) => {
+        state.density3D = e.target.checked;
+        scheduleRebuild();
+        scheduleRoomSync();
+      });
+      bindSl('sl-density3DStr', 'density3DStr', 'val-density3DStr', (v) => v.toFixed(1));
+      bindSl('sl-gravitySlope', 'gravitySlope', 'val-gravitySlope', (v) => v.toFixed(2));
+
+      document.getElementById('chk-caves').addEventListener('change', (e) => {
+        state.cavesEnabled = e.target.checked;
+        scheduleRebuild();
+        scheduleRoomSync();
+      });
+      bindSl('sl-caveThreshold', 'caveThreshold', 'val-caveThreshold', (v) => v.toFixed(2));
+      bindSl('sl-caveScale', 'caveScale', 'val-caveScale', (v) => v.toFixed(3));
+
+      bindSl('sl-sliceX', 'sliceX', 'val-sliceX', (v) => `${v | 0} / ${worldSize()}`, false);
+      bindSl('sl-sliceZ', 'sliceZ', 'val-sliceZ', (v) => `${v | 0} / ${worldSize()}`, false);
+
+      document.getElementById('btn-reset-slice').addEventListener('click', () => {
+        const sz = worldSize();
+        state.sliceX = sz; state.sliceZ = sz;
+        syncSlidersFromState();
+        rebuildMeshes();
+      });
+
+      document.getElementById('chk-xray').addEventListener('change', (e) => {
+        state.xray = e.target.checked;
+        rebuildMeshes();
+        scheduleRoomSync();
+      });
+
+      // Chunk Walk Pad & Teleport
+      document.querySelectorAll('.walk-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const [dx, dz] = btn.dataset.walk.split(',').map(Number);
+          state.chunkOriginX += dx;
+          state.chunkOriginZ += dz;
+          scheduleRebuild();
+          scheduleRoomSync();
+        });
+      });
+
+      document.getElementById('btn-tp-chunk').addEventListener('click', () => {
+        state.chunkOriginX = parseInt(document.getElementById('tp-cx').value, 10) || 0;
+        state.chunkOriginZ = parseInt(document.getElementById('tp-cz').value, 10) || 0;
+        scheduleRebuild();
+        scheduleRoomSync();
+        showToast(`Teleported to Chunk (${state.chunkOriginX}, ${state.chunkOriginZ})`);
+      });
+
+      document.getElementById('btn-clear-edits').addEventListener('click', () => {
+        state.edits = {};
+        scheduleRebuild();
+        syncRoomClearEdits();
+        showToast('Cleared custom edits — restored pure procedural terrain');
+      });
+
+      // Keyboard WASD Chunk Walking
+      window.addEventListener('keydown', (e) => {
+        if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+        const fwdX = -Math.sin(cam.theta), fwdZ = -Math.cos(cam.theta);
+        let fx = 0, fz = 0;
+        if (Math.abs(fwdX) > Math.abs(fwdZ)) fx = Math.sign(fwdX); else fz = Math.sign(fwdZ);
+        const rx = -fz, rz = fx;
+
+        let moved = false;
+        if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp')    { state.chunkOriginX += fx; state.chunkOriginZ += fz; moved = true; }
+        if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown')  { state.chunkOriginX -= fx; state.chunkOriginZ -= fz; moved = true; }
+        if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') { state.chunkOriginX += rx; state.chunkOriginZ += rz; moved = true; }
+        if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft')  { state.chunkOriginX -= rx; state.chunkOriginZ -= rz; moved = true; }
+        if (moved) { scheduleRebuild(); scheduleRoomSync(); }
+      });
+    }
+
+    // ========================================================================
+    // 11. ANIMATION LOOP & APPLICATION BOOTSTRAP
+    // ========================================================================
+
+    let lastFrameTime = performance.now();
+    let fpsCount = 0;
+    let fpsAccum = 0;
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+      lastFrameTime = now;
+
+      updateCamera(dt);
+      renderer.render(scene, camera);
+
+      fpsCount++;
+      fpsAccum += dt;
+      if (fpsAccum >= 0.45) {
+        document.getElementById('fps-readout').textContent = `${Math.round(fpsCount / fpsAccum)} FPS`;
+        fpsCount = 0;
+        fpsAccum = 0;
+      }
+    }
+
+    function bootApp() {
+      if (!initThree()) return;
+      setupCameraControls();
+      setupSplineCanvas();
+      renderPalette();
+      bindAllUI();
+      syncSlidersFromState();
+
+      if (!tryLoadFromURLHash()) {
+        applySeed(state.seedText, false);
+      }
+
+      lastFrameTime = performance.now();
+      animate(lastFrameTime);
+
+      // Initialize Cloud Identity, Community Hub & Collaborative Rooms
+      initFirebaseCloud();
+    }
+
+    if (document.readyState === 'complete') {
+      bootApp();
+    } else {
+      window.addEventListener('load', bootApp);
+    }
+  </script>
+</body>
+</html>
